@@ -50,6 +50,7 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
   void _toggleCurrency(String currencyCode) async {
     final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
     final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+    bool wasAdded = false;
     
     try {
       if (userPrefs.selectedCurrencyCodes.contains(currencyCode)) {
@@ -65,10 +66,18 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
       } else {
         // Add currency
         await userPrefs.addCurrency(currencyCode);
+        wasAdded = true;
       }
       
       // Update the selected currencies in the currency provider
       currencyProvider.selectCurrencies(userPrefs.selectedCurrencyCodes);
+      
+      // If a currency was added, return to home screen to see it
+      if (wasAdded) {
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      }
     } catch (e) {
       // Show currency limit dialog if that's the error
       if (e.toString().contains('Free users can only add up to 5 currencies')) {

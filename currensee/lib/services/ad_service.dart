@@ -49,7 +49,7 @@ class AdService {
   BannerAd loadBannerAd() {
     return BannerAd(
       adUnitId: bannerAdUnitId,
-      size: AdSize.mediumRectangle,
+      size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (ad) {

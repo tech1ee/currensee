@@ -9,9 +9,9 @@ class UserPreferences {
   UserPreferences({
     this.themeMode = ThemeMode.system,
     this.isPremium = false,
-    this.selectedCurrencyCodes = const [],
+    List<String>? selectedCurrencyCodes,
     this.baseCurrencyCode = 'USD',
-  });
+  }) : selectedCurrencyCodes = selectedCurrencyCodes ?? ['USD', 'EUR', 'GBP'];
 
   UserPreferences copyWith({
     ThemeMode? themeMode,
@@ -28,14 +28,26 @@ class UserPreferences {
   }
 
   factory UserPreferences.fromJson(Map<String, dynamic> json) {
+    // Extract selected currency codes with fallback to default currencies
+    List<String> currencies = [];
+    if (json['selectedCurrencyCodes'] != null) {
+      currencies = List<String>.from(json['selectedCurrencyCodes']);
+    }
+    
+    // Ensure we have at least one currency (the base currency)
+    final baseCurrency = json['baseCurrencyCode'] ?? 'USD';
+    if (currencies.isEmpty || !currencies.contains(baseCurrency)) {
+      currencies = [baseCurrency, 'EUR', 'GBP'];
+    }
+    
     return UserPreferences(
       themeMode: ThemeMode.values.firstWhere(
         (e) => e.toString() == json['themeMode'],
         orElse: () => ThemeMode.system,
       ),
       isPremium: json['isPremium'] ?? false,
-      selectedCurrencyCodes: List<String>.from(json['selectedCurrencyCodes'] ?? []),
-      baseCurrencyCode: json['baseCurrencyCode'] ?? 'USD',
+      selectedCurrencyCodes: currencies,
+      baseCurrencyCode: baseCurrency,
     );
   }
 

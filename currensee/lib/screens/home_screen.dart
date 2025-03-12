@@ -23,6 +23,22 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _adService.loadInterstitialAd(); // Preload interstitial ad
+    
+    // Schedule loading after build is complete
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSelectedCurrencies();
+    });
+  }
+  
+  Future<void> _loadSelectedCurrencies() async {
+    if (!mounted) return;
+    
+    final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+    final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+    
+    if (userPrefs.selectedCurrencyCodes.isNotEmpty) {
+      await currencyProvider.reloadSelectedCurrencies(userPrefs.selectedCurrencyCodes);
+    }
   }
 
   Future<void> _refreshRates() async {
@@ -61,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showCurrenciesScreen() {
+  void _showCurrenciesScreen() async {
     final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
     
     // Show ad for free users
@@ -69,10 +85,24 @@ class _HomeScreenState extends State<HomeScreen> {
       _adService.showInterstitialAd();
     }
     
-    Navigator.push(
+    // Store the current number of selected currencies to detect changes
+    final int currentCurrencyCount = userPrefs.selectedCurrencyCodes.length;
+    
+    // Navigate to currencies screen
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const CurrenciesScreen()),
     );
+    
+    // Check if currencies were added/removed and refresh if needed
+    if (mounted) {
+      final int newCurrencyCount = userPrefs.selectedCurrencyCodes.length;
+      
+      if (currentCurrencyCount != newCurrencyCount) {
+        // Force refresh of currency provider
+        await Provider.of<CurrencyProvider>(context, listen: false).fetchExchangeRates();
+      }
+    }
   }
 
   void _setBaseCurrency(String currencyCode) {

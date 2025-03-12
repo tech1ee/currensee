@@ -25,6 +25,16 @@ class UserPreferencesProvider with ChangeNotifier {
     
     _preferences = await _storageService.loadUserPreferences();
     
+    // Ensure we have at least some default currencies
+    if (_preferences.selectedCurrencyCodes.isEmpty) {
+      _preferences = _preferences.copyWith(
+        selectedCurrencyCodes: ['USD', 'EUR', 'GBP']
+      );
+      
+      // Save these default currencies
+      await _storageService.saveUserPreferences(_preferences);
+    }
+    
     _isLoading = false;
     notifyListeners();
   }
