@@ -9,7 +9,7 @@ class Currency {
     required this.code,
     required this.name,
     required this.symbol,
-    this.value = 0.0,
+    this.value = 1.0,
     required this.flagUrl,
   });
 
@@ -34,7 +34,7 @@ class Currency {
       code: json['code'],
       name: json['name'],
       symbol: json['symbol'] ?? '',
-      value: json['value']?.toDouble() ?? 0.0,
+      value: json['value']?.toDouble() ?? 1.0,
       flagUrl: json['flagUrl'] ?? '',
     );
   }

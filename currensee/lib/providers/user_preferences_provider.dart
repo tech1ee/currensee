@@ -17,6 +17,7 @@ class UserPreferencesProvider with ChangeNotifier {
   bool get isPremium => _preferences.isPremium;
   List<String> get selectedCurrencyCodes => _preferences.selectedCurrencyCodes;
   String get baseCurrencyCode => _preferences.baseCurrencyCode;
+  bool get hasCompletedOnboarding => _preferences.hasCompletedOnboarding;
 
   // Load preferences from storage
   Future<void> _loadPreferences() async {
@@ -104,12 +105,86 @@ class UserPreferencesProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Set premium status (for future use)
-  Future<void> setPremium(bool isPremium) async {
-    if (isPremium == _preferences.isPremium) return;
+  // Set the premium status and save
+  Future<void> setPremiumStatus(bool isPremium) async {
+    if (_preferences.isPremium != isPremium) {
+      print('💰 Setting premium status to: $isPremium');
+      
+      // Update preferences with new premium status
+      _preferences = _preferences.copyWith(isPremium: isPremium);
+      
+      // Save updated preferences
+      await _storageService.saveUserPreferences(_preferences);
+      
+      // Notify listeners
+      notifyListeners();
+    }
+  }
+  
+  // Set the last rates refresh timestamp and save
+  Future<void> setLastRatesRefresh(DateTime? timestamp) async {
+    print('⏰ Setting lastRatesRefresh to: $timestamp');
     
-    _preferences = _preferences.copyWith(isPremium: isPremium);
+    // Don't update if timestamps are the same
+    if (_preferences.lastRatesRefresh == timestamp) {
+      print('⏰ Timestamps are identical, no update needed');
+      return;
+    }
+    
+    // Update preferences with new timestamp
+    _preferences = _preferences.copyWith(lastRatesRefresh: timestamp);
+    
+    // Save updated preferences
+    await _storageService.saveUserPreferences(_preferences);
+    
+    print('⏰ Updated lastRatesRefresh: ${_preferences.lastRatesRefresh}');
+    print('⏰ Can refresh today: ${_preferences.canRefreshRatesToday()}');
+    
+    // Notify listeners
+    notifyListeners();
+  }
+  
+  // Mark onboarding as complete
+  Future<void> completeOnboarding() async {
+    if (_preferences.hasCompletedOnboarding) return;
+    
+    _preferences = _preferences.copyWith(hasCompletedOnboarding: true);
     await _storageService.saveUserPreferences(_preferences);
     notifyListeners();
+  }
+  
+  // Set initial currencies during onboarding
+  Future<void> setInitialCurrencies({required String baseCurrency, required List<String> selectedCurrencies}) async {
+    // Ensure base currency is in the selected currencies list
+    final List<String> updatedCurrencies = List<String>.from(selectedCurrencies);
+    if (!updatedCurrencies.contains(baseCurrency)) {
+      updatedCurrencies.add(baseCurrency);
+    }
+    
+    _preferences = _preferences.copyWith(
+      baseCurrencyCode: baseCurrency,
+      selectedCurrencyCodes: updatedCurrencies,
+    );
+    
+    await _storageService.saveUserPreferences(_preferences);
+    notifyListeners();
+  }
+
+  // Force reload preferences from storage
+  Future<void> reloadPreferences() async {
+    print('\n🔄 USER PREFS: Force reloading preferences from storage');
+    
+    try {
+      final loadedPrefs = await _storageService.loadUserPreferences();
+      
+      print('   BEFORE reload: ${_preferences.toJson()}');
+      _preferences = loadedPrefs;
+      print('   AFTER reload: ${_preferences.toJson()}');
+      print('   canRefreshRatesToday: ${_preferences.canRefreshRatesToday()}');
+      
+      notifyListeners();
+    } catch (e) {
+      print('   ⚠️ Error reloading preferences: $e');
+    }
   }
 } 

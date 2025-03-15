@@ -6,8 +6,8 @@ import '../models/exchange_rates.dart';
 
 class ApiService {
   final String baseUrl = AppConstants.apiBaseUrl;
-  final String apiKey = AppConstants.apiKey;
-  final bool _useMockData = AppConstants.apiKey == 'YOUR_API_KEY'; // Check if we need to use mock data
+  final String fallbackUrl = AppConstants.apiFallbackUrl;
+  final bool _useMockData = AppConstants.useMockData;
 
   // Fetch all available currencies
   Future<List<Currency>> fetchAvailableCurrencies() async {
@@ -16,30 +16,83 @@ class ApiService {
     }
     
     try {
+      // First try the primary URL
       final response = await http.get(
-        Uri.parse('$baseUrl/currencies.json?app_id=$apiKey'),
-      );
+        Uri.parse('${baseUrl}currencies.json'),
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        List<Currency> currencies = [];
-
-        data.forEach((code, name) {
-          currencies.add(Currency(
-            code: code,
-            name: name.toString(),
-            symbol: '',  // API doesn't provide symbols in this endpoint
-            flagUrl: 'https://flagsapi.com/${code.substring(0, 2)}/flat/64.png',
-          ));
-        });
-
-        return currencies;
-      } else {
-        throw Exception('Failed to load currencies: ${response.statusCode}');
+        return _parseCurrenciesResponse(response.body);
+      } 
+      
+      // If primary URL fails, try the fallback
+      final fallbackResponse = await http.get(
+        Uri.parse('${fallbackUrl}currencies.json'),
+      ).timeout(const Duration(seconds: 10));
+      
+      if (fallbackResponse.statusCode == 200) {
+        return _parseCurrenciesResponse(fallbackResponse.body);
       }
+      
+      throw Exception('Failed to load currencies: ${response.statusCode}');
     } catch (e) {
+      print('Error fetching currencies: $e');
       throw Exception('Failed to fetch currencies: $e');
     }
+  }
+
+  // Helper method to parse currencies response
+  List<Currency> _parseCurrenciesResponse(String responseBody) {
+    final Map<String, dynamic> data = json.decode(responseBody);
+    List<Currency> currencies = [];
+
+    data.forEach((code, name) {
+      // Make sure code is at least 2 characters for flag URL
+      String flagCode = code.length >= 2 ? code.substring(0, 2).toUpperCase() : 'UN';
+      
+      // Special cases for flag URLs
+      if (code == 'eur') flagCode = 'EU';
+      if (code == 'btc') flagCode = 'BTC'; // Will use a fallback image
+      if (code == 'eth') flagCode = 'ETH'; // Will use a fallback image
+      
+      currencies.add(Currency(
+        code: code.toUpperCase(),
+        name: name.toString(),
+        symbol: _getCurrencySymbol(code.toUpperCase()),
+        flagUrl: 'https://flagsapi.com/$flagCode/flat/64.png',
+      ));
+    });
+
+    return currencies;
+  }
+
+  // Get currency symbol based on code
+  String _getCurrencySymbol(String code) {
+    final Map<String, String> symbols = {
+      'USD': '\$',
+      'EUR': '€',
+      'GBP': '£',
+      'JPY': '¥',
+      'CNY': '¥',
+      'AUD': 'A\$',
+      'CAD': 'C\$',
+      'CHF': 'Fr',
+      'HKD': 'HK\$',
+      'SGD': 'S\$',
+      'INR': '₹',
+      'BRL': 'R\$',
+      'RUB': '₽',
+      'KRW': '₩',
+      'TRY': '₺',
+      'ZAR': 'R',
+      'MXN': 'Mex\$',
+      'AED': 'د.إ',
+      'BTC': '₿',
+      'ETH': 'Ξ',
+      // Add more symbols as needed
+    };
+    
+    return symbols[code] ?? '';
   }
 
   // Fetch latest exchange rates
@@ -49,19 +102,64 @@ class ApiService {
     }
     
     try {
+      // First try the primary URL
       final response = await http.get(
-        Uri.parse('$baseUrl/latest.json?app_id=$apiKey&base=$baseCurrency'),
-      );
+        Uri.parse('${baseUrl}currencies/${baseCurrency.toLowerCase()}.json'),
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        return ExchangeRates.fromJson(data);
-      } else {
-        throw Exception('Failed to load exchange rates: ${response.statusCode}');
+        return _parseRatesResponse(response.body, baseCurrency);
       }
+      
+      // If primary URL fails, try the fallback
+      final fallbackResponse = await http.get(
+        Uri.parse('${fallbackUrl}currencies/${baseCurrency.toLowerCase()}.json'),
+      ).timeout(const Duration(seconds: 10));
+      
+      if (fallbackResponse.statusCode == 200) {
+        return _parseRatesResponse(fallbackResponse.body, baseCurrency);
+      }
+      
+      throw Exception('Failed to load exchange rates: ${response.statusCode}');
     } catch (e) {
+      print('Error fetching exchange rates: $e');
       throw Exception('Failed to fetch exchange rates: $e');
     }
+  }
+
+  // Helper method to parse rates response
+  ExchangeRates _parseRatesResponse(String responseBody, String baseCurrency) {
+    final Map<String, dynamic> data = json.decode(responseBody);
+    
+    // The API returns a structure like {"usd": {"eur": 0.93, "gbp": 0.79, ...}}
+    // We need to extract the inner rates object
+    final baseKey = baseCurrency.toLowerCase();
+    final Map<String, dynamic> ratesData = data[baseKey] ?? {};
+    
+    // Convert to our expected format
+    final Map<String, double> rates = {};
+    ratesData.forEach((code, value) {
+      if (code != baseKey) {  // Skip the base currency itself
+        // Convert to double, handle potential non-numeric values
+        double rate;
+        if (value is double) {
+          rate = value;
+        } else if (value is int) {
+          rate = value.toDouble();
+        } else if (value is String) {
+          rate = double.tryParse(value) ?? 0.0;
+        } else {
+          rate = 0.0;
+        }
+        rates[code.toUpperCase()] = rate;
+      }
+    });
+    
+    return ExchangeRates(
+      base: baseCurrency.toUpperCase(),
+      timestamp: DateTime.now(),
+      rates: rates,
+    );
   }
   
   // Generate mock currencies for testing
@@ -159,11 +257,5 @@ class ApiService {
       timestamp: DateTime.now(),
       rates: newRates,
     );
-  }
-  
-  // Helper to get base currency rate for mock data
-  double _getBaseCurrencyRate(String currency) {
-    // This method is no longer used with the new implementation
-    return 1.0;
   }
 } 

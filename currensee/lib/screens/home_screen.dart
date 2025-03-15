@@ -264,95 +264,12 @@ class _HomeScreenState extends State<HomeScreen> {
                             currencyProvider.updateCurrencyValue(code, value);
                           },
                           onLongPress: () {
-                            showModalBottomSheet(
-                              context: context,
-                              backgroundColor: Theme.of(context).colorScheme.surface,
-                              shape: const RoundedRectangleBorder(
-                                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                              ),
-                              builder: (context) => Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      width: 40,
-                                      height: 4,
-                                      margin: const EdgeInsets.only(bottom: 16),
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(context).dividerColor.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(2),
-                                      ),
-                                    ),
-                                    ListTile(
-                                      leading: Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Icon(
-                                          Icons.star_rounded,
-                                          color: Theme.of(context).colorScheme.primary,
-                                          size: 20,
-                                        ),
-                                      ),
-                                      title: const Text(
-                                        'Set as Base Currency',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w500,
-                                          letterSpacing: -0.3,
-                                        ),
-                                      ),
-                                      onTap: () {
-                                        Navigator.pop(context);
-                                        _setBaseCurrency(currency.code);
-                                      },
-                                    ),
-                                    ListTile(
-                                      leading: Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: Theme.of(context).colorScheme.error.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Icon(
-                                          Icons.delete_rounded,
-                                          color: Theme.of(context).colorScheme.error,
-                                          size: 20,
-                                        ),
-                                      ),
-                                      title: const Text(
-                                        'Remove Currency',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w500,
-                                          letterSpacing: -0.3,
-                                        ),
-                                      ),
-                                      onTap: () {
-                                        Navigator.pop(context);
-                                        if (isBaseCurrency) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: const Text('Cannot remove base currency'),
-                                              behavior: SnackBarBehavior.floating,
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(10),
-                                              ),
-                                            ),
-                                          );
-                                          return;
-                                        }
-                                        
-                                        userPrefs.removeCurrency(currency.code);
-                                        currencyProvider.selectCurrencies(userPrefs.selectedCurrencyCodes);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
+                            // Handle long press if needed
                           },
+                          onSetAsBase: () {
+                            _setBaseCurrency(currency.code);
+                          },
+                          index: index,
                         );
                       },
                     ),

@@ -5,7 +5,10 @@ import 'constants/theme_constants.dart';
 import 'providers/currency_provider.dart';
 import 'providers/user_preferences_provider.dart';
 import 'screens/home_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'services/ad_service.dart';
+import 'services/purchase_service.dart';
+import 'services/storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,6 +43,7 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   final UserPreferencesProvider _userPrefs = UserPreferencesProvider();
   final CurrencyProvider _currencyProvider = CurrencyProvider();
+  final PurchaseService _purchaseService = PurchaseService();
   bool _initialized = false;
 
   @override
@@ -61,6 +65,9 @@ class _MyAppState extends State<MyApp> {
     print('   Base currency: ${_userPrefs.baseCurrencyCode}');
     print('   Selected currencies: ${_userPrefs.selectedCurrencyCodes.join(', ')}');
     print('   Theme: ${_userPrefs.themeMode.toString()}');
+    
+    // Initialize purchase service
+    await _purchaseService.initialize();
     
     // Now initialize currency provider with user preferences
     print('⏳ Initializing currency provider...');
@@ -84,6 +91,8 @@ class _MyAppState extends State<MyApp> {
       providers: [
         ChangeNotifierProvider.value(value: _userPrefs),
         ChangeNotifierProvider.value(value: _currencyProvider),
+        ChangeNotifierProvider.value(value: _purchaseService),
+        Provider<StorageService>(create: (_) => StorageService()),
       ],
       child: Consumer<UserPreferencesProvider>(
         builder: (context, userPrefs, _) {
@@ -93,7 +102,9 @@ class _MyAppState extends State<MyApp> {
             darkTheme: ThemeConstants.darkTheme,
             themeMode: userPrefs.themeMode,
             home: _initialized 
-                ? const HomeScreen() 
+                ? (userPrefs.hasCompletedOnboarding 
+                    ? const HomeScreen() 
+                    : const OnboardingScreen())
                 : Scaffold(
                     body: Center(
                       child: Column(

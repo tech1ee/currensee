@@ -1,7 +1,9 @@
 class AppConstants {
   // API Constants
-  static const String apiBaseUrl = 'https://openexchangerates.org/api/';
-  static const String apiKey = 'YOUR_API_KEY'; // Replace with your actual API key
+  static const String apiBaseUrl = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/';
+  static const String apiFallbackUrl = 'https://latest.currency-api.pages.dev/v1/';
+  static const String apiKey = ''; // No API key needed for this service
+  static const bool useMockData = false; // Set to false to use real API
   
   // App Limitations
   static const int maxCurrenciesFreeTier = 5;
@@ -32,4 +34,7 @@ class AppConstants {
   static const String prefsKeyExchangeRates = 'exchange_rates';
   static const String prefsKeyIsPremium = 'is_premium';
   static const String prefsKeyLastUpdate = 'last_update';
+  static const String prefsKeyOnboardingCompleted = 'onboarding_completed';
+  static const String prefsKeyCurrencyValues = 'currency_values';
+  static const String prefsKeyLastRatesRefresh = 'last_rates_refresh';
 } 

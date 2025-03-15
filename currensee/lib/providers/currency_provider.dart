@@ -2,8 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/currency.dart';
 import '../models/exchange_rates.dart';
+import '../models/user_preferences.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../providers/user_preferences_provider.dart';
 
 class CurrencyProvider with ChangeNotifier {
   final ApiService _apiService = ApiService();
@@ -13,6 +15,7 @@ class CurrencyProvider with ChangeNotifier {
   List<Currency> _selectedCurrencies = [];
   ExchangeRates? _exchangeRates;
   String _baseCurrencyCode = 'USD';
+  UserPreferences? _userPreferences;
   
   // Add tracking for the currently edited currency
   String? _currentlyEditedCurrencyCode;
@@ -32,10 +35,21 @@ class CurrencyProvider with ChangeNotifier {
   bool get isLoadingRates => _isLoadingRates;
   bool get isOffline => _isOffline;
   String? get error => _error;
+  UserPreferences? get userPreferences => _userPreferences;
+  
+  // Can the user refresh rates today?
+  bool get canRefreshRatesToday => 
+    _userPreferences?.canRefreshRatesToday() ?? true;
   
   // Initialize with selected currency codes
   Future<void> initialize(List<String> selectedCurrencyCodes, String baseCurrencyCode) async {
     _baseCurrencyCode = baseCurrencyCode;
+    
+    // Load user preferences
+    _userPreferences = await _storageService.loadUserPreferences();
+    
+    // Load previously saved currency values
+    final savedValues = await _storageService.loadCurrencyValues();
     
     // Try to load cached exchange rates
     final cachedRates = await _storageService.loadExchangeRates();
@@ -60,8 +74,26 @@ class CurrencyProvider with ChangeNotifier {
     // Select currencies based on the provided codes
     selectCurrencies(selectedCurrencyCodes);
     
-    // Fetch latest exchange rates
-    await fetchExchangeRates();
+    // Apply saved values to selected currencies
+    if (savedValues.isNotEmpty) {
+      for (var i = 0; i < _selectedCurrencies.length; i++) {
+        final currency = _selectedCurrencies[i];
+        if (savedValues.containsKey(currency.code)) {
+          _selectedCurrencies[i].value = savedValues[currency.code] ?? 1.0;
+        }
+      }
+    }
+    
+    // If base currency has no value, set it to 1.0
+    final baseIndex = _selectedCurrencies.indexWhere((c) => c.code == _baseCurrencyCode);
+    if (baseIndex != -1 && _selectedCurrencies[baseIndex].value == 0) {
+      _selectedCurrencies[baseIndex].value = 1.0;
+    }
+    
+    // Fetch latest exchange rates if we don't have cached data
+    if (_exchangeRates == null) {
+      await fetchExchangeRates();
+    }
     
     // Make sure to notify listeners after everything is loaded
     notifyListeners();
@@ -91,31 +123,115 @@ class CurrencyProvider with ChangeNotifier {
     }
   }
 
-  // Fetch latest exchange rates
-  Future<void> fetchExchangeRates() async {
+  // Fetch latest exchange rates - NOTE: This method doesn't check refresh limits
+  Future<bool> fetchExchangeRates() async {
     _isLoadingRates = true;
     _error = null;
     notifyListeners();
     
     try {
+      print('📊 FETCH EXCHANGE RATES: Requesting latest rates from API');
       final rates = await _apiService.fetchExchangeRates(_baseCurrencyCode);
       _exchangeRates = rates;
       _isOffline = false;
       
       // Save rates to storage
+      print('📊 FETCH EXCHANGE RATES: Saving rates to storage');
       await _storageService.saveExchangeRates(rates);
+      
+      // Update the last refresh time in user preferences - this is crucial for the refresh limit
+      if (_userPreferences != null) {
+        final dateBeforeUpdate = _userPreferences?.lastRatesRefresh;
+        print('📊 FETCH EXCHANGE RATES: Updating last refresh time');
+        print('   BEFORE update: lastRatesRefresh = $dateBeforeUpdate');
+        
+        final updatedPrefs = _userPreferences!.copyWith(
+          lastRatesRefresh: DateTime.now(),
+        );
+        _userPreferences = updatedPrefs;
+        await _storageService.saveUserPreferences(updatedPrefs);
+        
+        print('   AFTER update: lastRatesRefresh = ${_userPreferences?.lastRatesRefresh}');
+        print('   VERIFY: canRefreshRatesToday = ${_userPreferences?.canRefreshRatesToday()}');
+      } else {
+        print('⚠️ Cannot update last refresh time: user preferences is null');
+      }
       
       // Update the values of all selected currencies
       _updateCurrencyValues();
       
       _isLoadingRates = false;
       notifyListeners();
+      return true;
     } catch (e) {
       _error = 'Failed to fetch exchange rates: $e';
       _isLoadingRates = false;
       _isOffline = true;
       notifyListeners();
+      return false;
     }
+  }
+  
+  // Check refresh limit and fetch rates if allowed
+  // This is the method that should be called from UI to enforce limits
+  Future<bool> tryRefreshRates({UserPreferencesProvider? userPrefsProvider}) async {
+    print('\n🔍 REFRESH LIMIT CHECK: Checking if user can refresh rates today');
+    
+    // Force reload user preferences to get the latest state
+    try {
+      print('   Loading latest user preferences from storage');
+      final prefsBefore = _userPreferences;
+      _userPreferences = await _storageService.loadUserPreferences();
+      print('   Preferences BEFORE reload: ${prefsBefore?.toJson()}');
+      print('   Preferences AFTER reload: ${_userPreferences?.toJson()}');
+    } catch (e) {
+      print('⚠️ Error loading user preferences: $e');
+      _error = 'Error checking refresh limits: $e';
+      return false;
+    }
+    
+    final bool isPremium = _userPreferences?.isPremium ?? false;
+    final DateTime? lastRefresh = _userPreferences?.lastRatesRefresh;
+    final bool canRefresh = _userPreferences?.canRefreshRatesToday() ?? true;
+    
+    print('🔍 REFRESH LIMIT CHECK: Status');
+    print('   User is premium: $isPremium');
+    print('   Last refresh timestamp: $lastRefresh');
+    print('   Can refresh today: $canRefresh');
+    
+    // If the user is premium, they can always refresh
+    if (isPremium) {
+      print('👑 Premium user can always refresh rates');
+      final success = await fetchExchangeRates();
+      
+      // If we were passed a UserPreferencesProvider, make sure to sync the updated timestamp
+      if (success && userPrefsProvider != null && _userPreferences != null) {
+        print('🔄 Syncing updated lastRatesRefresh to UserPreferencesProvider');
+        await userPrefsProvider.setLastRatesRefresh(_userPreferences!.lastRatesRefresh);
+      }
+      
+      return success;
+    }
+    
+    // Check if the free user has already refreshed today
+    if (_userPreferences != null && !canRefresh) {
+      _error = 'Free users can only refresh once per day. Upgrade to Premium for unlimited refreshes!';
+      print('❌ Free user cannot refresh rates today: $_error');
+      notifyListeners();
+      return false;
+    }
+    
+    print('✅ Free user can refresh rates (hasn\'t refreshed today), proceeding with fetchExchangeRates');
+    // User is allowed to refresh, proceed with fetching rates
+    final success = await fetchExchangeRates();
+    
+    // If we were passed a UserPreferencesProvider, make sure to sync the updated timestamp
+    if (success && userPrefsProvider != null && _userPreferences != null) {
+      print('🔄 Syncing updated lastRatesRefresh to UserPreferencesProvider');
+      await userPrefsProvider.setLastRatesRefresh(_userPreferences!.lastRatesRefresh);
+    }
+    
+    return success;
   }
 
   // Select currencies based on the provided codes
@@ -130,10 +246,23 @@ class CurrencyProvider with ChangeNotifier {
       currencyCodes = [...currencyCodes, _baseCurrencyCode];
     }
     
+    // Move base currency to the front of the list
+    currencyCodes = [
+      _baseCurrencyCode,
+      ...currencyCodes.where((code) => code != _baseCurrencyCode),
+    ];
+    
     // Find currency objects for the provided codes
     _selectedCurrencies = _allCurrencies
         .where((currency) => currencyCodes.contains(currency.code))
         .toList();
+    
+    // Sort currencies to match the order in currencyCodes
+    _selectedCurrencies.sort((a, b) {
+      final indexA = currencyCodes.indexOf(a.code);
+      final indexB = currencyCodes.indexOf(b.code);
+      return indexA.compareTo(indexB);
+    });
     
     // If we couldn't find all currencies, create placeholders
     final foundCodes = _selectedCurrencies.map((c) => c.code).toList();
@@ -245,6 +374,9 @@ class CurrencyProvider with ChangeNotifier {
       // Replace currencies while preserving order
       _selectedCurrencies = updatedCurrencies;
       
+      // Save the updated currency values
+      await _storageService.saveCurrencyValues(_selectedCurrencies);
+      
       // Critical: Keep this currency marked as being edited
       print('   ✅ Update complete, notifying listeners (keeping $currencyCode as edited)');
       _currentlyEditedCurrencyCode = currencyCode;
@@ -265,23 +397,38 @@ class CurrencyProvider with ChangeNotifier {
     
     print('💱 Initializing all currencies with base currency');
     
-    // Base currency always has value 1
-    final baseCurrency = _selectedCurrencies.firstWhere(
-      (c) => c.code == _baseCurrencyCode,
-      orElse: () => Currency(
+    // Find the base currency in our list
+    int baseIndex = _selectedCurrencies.indexWhere((c) => c.code == _baseCurrencyCode);
+    
+    // If the base currency is found, ensure it has a value of 1.0
+    if (baseIndex != -1) {
+      // Set base currency value to 1.0 if it's 0.0
+      if (_selectedCurrencies[baseIndex].value == 0) {
+        _selectedCurrencies[baseIndex].value = 1.0;
+      }
+      
+      // Use the current base currency value to recalculate all others
+      _recalculateValuesFromCurrency(_baseCurrencyCode, _selectedCurrencies[baseIndex].value);
+    } else {
+      // Base currency not in the list, create it
+      final baseCurrency = Currency(
         code: _baseCurrencyCode,
         name: _baseCurrencyCode,
         symbol: '',
+        value: 1.0,  // Always set the base value to 1.0 when creating it new
         flagUrl: 'https://flagsapi.com/${_baseCurrencyCode.substring(0, 2)}/flat/64.png',
-      ),
-    );
-    
-    // Use the comprehensive recalculation method
-    _recalculateValuesFromCurrency(baseCurrency.code, 1.0);
+      );
+      
+      // Add it to the list
+      _selectedCurrencies.insert(0, baseCurrency);
+      
+      // Recalculate based on this new currency with value 1.0
+      _recalculateValuesFromCurrency(_baseCurrencyCode, 1.0);
+    }
   }
   
   // PRIVATE: COMPREHENSIVE recalculation based on a changed currency
-  void _recalculateValuesFromCurrency(String sourceCode, double sourceValue) {
+  Future<void> _recalculateValuesFromCurrency(String sourceCode, double sourceValue) async {
     if (_exchangeRates == null) return;
     
     print('\n🧮🧮🧮 RECALCULATING all values from $sourceCode = $sourceValue 🧮🧮🧮');
@@ -333,6 +480,10 @@ class CurrencyProvider with ChangeNotifier {
         }
       }
     }
+    
+    // Save the updated currency values
+    await _storageService.saveCurrencyValues(_selectedCurrencies);
+    
     print('🧮🧮🧮 RECALCULATION COMPLETE 🧮🧮🧮\n');
   }
 

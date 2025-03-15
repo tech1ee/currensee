@@ -11,6 +11,8 @@ class CurrencyListItem extends StatefulWidget {
   final bool isBaseCurrency;
   final Function(String, double) onValueChanged;
   final VoidCallback onLongPress;
+  final VoidCallback onSetAsBase;
+  final int index;
 
   const CurrencyListItem({
     Key? key,
@@ -18,6 +20,8 @@ class CurrencyListItem extends StatefulWidget {
     required this.isBaseCurrency,
     required this.onValueChanged,
     required this.onLongPress,
+    required this.onSetAsBase,
+    required this.index,
   }) : super(key: key);
 
   @override
@@ -216,227 +220,180 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
       });
     }
     
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor.withOpacity(isDark ? 0.15 : 0.08),
-            width: 1,
-          ),
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onLongPress: widget.onLongPress,
-          onTap: () {
-            // Don't hide the keyboard when changing focus
-            FocusScope.of(context).requestFocus(_focusNode);
-            
-            // Set edited currency and block unwanted updates
-            final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-            currencyProvider.setCurrentlyEditedCurrencyCode(widget.currency.code);
-            
-            setState(() {
-              _blockValueUpdates = true;
-              _isUserEditing = true;
-            });
-            
-            if (widget.currency.value == 0) {
-              _controller.clear();
-            } else {
-              _controller.selection = TextSelection(
-                baseOffset: 0,
-                extentOffset: _controller.text.length,
-              );
-            }
-            
-            print('📱 Row tapped for ${widget.currency.code}, requesting focus');
-          },
-          child: Padding(
-            // Increase vertical padding for more space
-            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+    final content = InkWell(
+      onTap: () {
+        // Don't hide the keyboard when changing focus
+        FocusScope.of(context).requestFocus(_focusNode);
+        
+        // Set edited currency and block unwanted updates
+        final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+        currencyProvider.setCurrentlyEditedCurrencyCode(widget.currency.code);
+        
+        setState(() {
+          _blockValueUpdates = true;
+          _isUserEditing = true;
+        });
+        
+        if (widget.currency.value == 0) {
+          _controller.clear();
+        } else {
+          _controller.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: _controller.text.length,
+          );
+        }
+      },
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Left side with flag and currency info
+                // Flag
+                Image.network(
+                  widget.currency.flagUrl,
+                  width: 36,
+                  height: 36,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.flag, color: Colors.grey),
+                ),
+                const SizedBox(width: 16),
+                // Currency code and name
                 Expanded(
-                  flex: 3, // Allocate more space to the left side
-                  child: Row(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Currency flag with shadow
-                      Container(
-                        width: 40,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.08),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.network(
-                            widget.currency.flagUrl,
-                            width: 40,
-                            height: 30,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                width: 40,
-                                height: 30,
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    widget.currency.code.length >= 2 
-                                        ? widget.currency.code.substring(0, 2)
-                                        : widget.currency.code,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                      color: isDark ? Colors.grey.shade300 : Colors.grey.shade600,
-                                      letterSpacing: -0.3,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                      Text(
+                        widget.currency.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 16,
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      
-                      // Currency info
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  widget.currency.code,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 17,
-                                    letterSpacing: -0.3,
-                                    color: widget.isBaseCurrency
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Theme.of(context).textTheme.bodyLarge?.color,
-                                  ),
-                                ),
-                                if (widget.isBaseCurrency)
-                                  Container(
-                                    margin: const EdgeInsets.only(left: 6.0),
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Icon(
-                                      Icons.star_rounded,
-                                      size: 14,
-                                      color: Theme.of(context).colorScheme.primary,
-                                    ),
-                                  ),
-                              ],
+                      Row(
+                        children: [
+                          Text(
+                            widget.currency.code,
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              widget.currency.name,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.6),
-                                letterSpacing: -0.2,
-                                height: 1.2,
+                          ),
+                          if (widget.isBaseCurrency)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              margin: const EdgeInsets.only(left: 8),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              child: Text(
+                                'Base',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12,
+                                ),
+                              ),
                             ),
-                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                // Value editor
+                Expanded(
+                  flex: 2,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          focusNode: _focusNode,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          textAlign: TextAlign.right,
+                          autofocus: false,
+                          // Absolutely minimal decoration
+                          decoration: const InputDecoration.collapsed(
+                            hintText: '',
+                          ),
+                          cursorWidth: 1.5,
+                          cursorColor: Theme.of(context).colorScheme.primary,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: -0.5,
+                            // Highlight text when editing
+                            color: isBeingEdited && _isFocused 
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).textTheme.bodyLarge?.color,
+                          ),
+                          onChanged: (text) {
+                            if (!_blockValueUpdates) {
+                              setState(() {
+                                _blockValueUpdates = true;
+                                _isUserEditing = true;
+                              });
+                            }
+                            
+                            if (text.isEmpty) return;
+                            
+                            final cleanText = text.replaceAll(',', '.');
+                            final value = double.tryParse(cleanText);
+                            
+                            if (value != null) {
+                              final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+                              currencyProvider.setCurrentlyEditedCurrencyCode(widget.currency.code);
+                              
+                              Future.microtask(() {
+                                if (mounted) {
+                                  widget.onValueChanged(widget.currency.code, value);
+                                }
+                              });
+                            }
+                          },
                         ),
                       ),
                     ],
                   ),
                 ),
-                
-                // Add a small spacer
-                const SizedBox(width: 8),
-                
-                // Currency value input - now separate from the left content
-                SizedBox(
-                  width: 160,
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    textAlign: TextAlign.right,
-                    autofocus: false,
-                    decoration: const InputDecoration.collapsed(hintText: ''),
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: -0.3,
-                      color: Theme.of(context).textTheme.bodyLarge?.color,
-                    ),
-                    onTap: () {
-                      // Don't hide keyboard when tapping another field
-                      final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-                      currencyProvider.setCurrentlyEditedCurrencyCode(widget.currency.code);
-                      
-                      setState(() {
-                        _blockValueUpdates = true;
-                        _isUserEditing = true;
-                      });
-                      
-                      if (widget.currency.value == 0) {
-                        _controller.clear();
-                      } else {
-                        _controller.selection = TextSelection(
-                          baseOffset: 0,
-                          extentOffset: _controller.text.length,
-                        );
-                      }
-                    },
-                    onChanged: (text) {
-                      if (!_blockValueUpdates) {
-                        setState(() {
-                          _blockValueUpdates = true;
-                          _isUserEditing = true;
-                        });
-                      }
-                      
-                      if (text.isEmpty) return;
-                      
-                      final cleanText = text.replaceAll(',', '.');
-                      final value = double.tryParse(cleanText);
-                      
-                      if (value != null) {
-                        final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-                        currencyProvider.setCurrentlyEditedCurrencyCode(widget.currency.code);
-                        
-                        Future.microtask(() {
-                          if (mounted) {
-                            widget.onValueChanged(widget.currency.code, value);
-                          }
-                        });
-                      }
-                    },
-                  ),
-                ),
               ],
             ),
           ),
-        ),
+          // Swipe hint indicator
+          Positioned(
+            right: 5,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.chevron_left,
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                    size: 20,
+                  ),
+                  Icon(
+                    Icons.more_vert,
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                    size: 18,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
+    );
+    
+    return Material(
+      color: widget.isBaseCurrency 
+          ? Theme.of(context).colorScheme.primary.withOpacity(0.08)
+          : Colors.transparent,
+      child: content,
     );
   }
 } 
