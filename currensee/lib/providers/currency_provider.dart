@@ -7,6 +7,14 @@ import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../providers/user_preferences_provider.dart';
 
+// Class to hold refresh result
+class RefreshResult {
+  final bool success;
+  final String? errorMessage;
+  
+  RefreshResult({required this.success, this.errorMessage});
+}
+
 class CurrencyProvider with ChangeNotifier {
   final ApiService _apiService = ApiService();
   final StorageService _storageService = StorageService();
@@ -172,66 +180,56 @@ class CurrencyProvider with ChangeNotifier {
     }
   }
   
-  // Check refresh limit and fetch rates if allowed
-  // This is the method that should be called from UI to enforce limits
-  Future<bool> tryRefreshRates({UserPreferencesProvider? userPrefsProvider}) async {
-    print('\n🔍 REFRESH LIMIT CHECK: Checking if user can refresh rates today');
-    
-    // Force reload user preferences to get the latest state
+  // Try to refresh rates, respecting rate limits for free users
+  Future<RefreshResult> tryRefreshRates() async {
     try {
-      print('   Loading latest user preferences from storage');
-      final prefsBefore = _userPreferences;
-      _userPreferences = await _storageService.loadUserPreferences();
-      print('   Preferences BEFORE reload: ${prefsBefore?.toJson()}');
-      print('   Preferences AFTER reload: ${_userPreferences?.toJson()}');
-    } catch (e) {
-      print('⚠️ Error loading user preferences: $e');
-      _error = 'Error checking refresh limits: $e';
-      return false;
-    }
-    
-    final bool isPremium = _userPreferences?.isPremium ?? false;
-    final DateTime? lastRefresh = _userPreferences?.lastRatesRefresh;
-    final bool canRefresh = _userPreferences?.canRefreshRatesToday() ?? true;
-    
-    print('🔍 REFRESH LIMIT CHECK: Status');
-    print('   User is premium: $isPremium');
-    print('   Last refresh timestamp: $lastRefresh');
-    print('   Can refresh today: $canRefresh');
-    
-    // If the user is premium, they can always refresh
-    if (isPremium) {
-      print('👑 Premium user can always refresh rates');
-      final success = await fetchExchangeRates();
+      final isPremium = _userPreferences?.isPremium ?? false;
       
-      // If we were passed a UserPreferencesProvider, make sure to sync the updated timestamp
-      if (success && userPrefsProvider != null && _userPreferences != null) {
-        print('🔄 Syncing updated lastRatesRefresh to UserPreferencesProvider');
-        await userPrefsProvider.setLastRatesRefresh(_userPreferences!.lastRatesRefresh);
+      print('🔄 tryRefreshRates - User is premium: $isPremium');
+      print('🔄 tryRefreshRates - Can refresh today: ${canRefreshRatesToday}');
+      
+      // Premium users can always refresh
+      if (isPremium) {
+        print('🔄 Premium user - refreshing rates');
+        final success = await fetchExchangeRates();
+        
+        if (!success) {
+          return RefreshResult(
+            success: false, 
+            errorMessage: error ?? 'Failed to fetch exchange rates'
+          );
+        }
+        
+        return RefreshResult(success: true);
       }
       
-      return success;
+      // Free users can only refresh once per day
+      if (canRefreshRatesToday) {
+        print('🔄 Free user - has not refreshed today - refreshing rates');
+        final success = await fetchExchangeRates();
+        
+        if (!success) {
+          return RefreshResult(
+            success: false, 
+            errorMessage: error ?? 'Failed to fetch exchange rates'
+          );
+        }
+        
+        return RefreshResult(success: true);
+      } else {
+        print('🔄 Free user - already refreshed today - showing limit message');
+        return RefreshResult(
+          success: false,
+          errorMessage: 'Free users can only refresh rates once per day. Upgrade to premium for unlimited refreshes!'
+        );
+      }
+    } catch (e) {
+      print('❌ Error in tryRefreshRates: $e');
+      return RefreshResult(
+        success: false,
+        errorMessage: 'Error refreshing rates: ${e.toString()}'
+      );
     }
-    
-    // Check if the free user has already refreshed today
-    if (_userPreferences != null && !canRefresh) {
-      _error = 'Free users can only refresh once per day. Upgrade to Premium for unlimited refreshes!';
-      print('❌ Free user cannot refresh rates today: $_error');
-      notifyListeners();
-      return false;
-    }
-    
-    print('✅ Free user can refresh rates (hasn\'t refreshed today), proceeding with fetchExchangeRates');
-    // User is allowed to refresh, proceed with fetching rates
-    final success = await fetchExchangeRates();
-    
-    // If we were passed a UserPreferencesProvider, make sure to sync the updated timestamp
-    if (success && userPrefsProvider != null && _userPreferences != null) {
-      print('🔄 Syncing updated lastRatesRefresh to UserPreferencesProvider');
-      await userPrefsProvider.setLastRatesRefresh(_userPreferences!.lastRatesRefresh);
-    }
-    
-    return success;
   }
 
   // Select currencies based on the provided codes
@@ -492,5 +490,62 @@ class CurrencyProvider with ChangeNotifier {
     _baseCurrencyCode = currencyCode;
     // We need to fetch new exchange rates for the new base currency
     fetchExchangeRates();
+  }
+
+  // Force reload user preferences to ensure refresh limit is accurate
+  Future<void> forceReloadPreferences() async {
+    try {
+      print('🔄 CurrencyProvider: Forcing reload of user preferences');
+      
+      // Store the previous values for comparison
+      final beforePrefs = _userPreferences;
+      final beforeCanRefresh = canRefreshRatesToday;
+      
+      // Load fresh user preferences from storage
+      _userPreferences = await _storageService.loadUserPreferences();
+      
+      // Log before and after states
+      print('🔄 User preferences reload:');
+      print('   Before lastRatesRefresh: ${beforePrefs?.lastRatesRefresh}');
+      print('   After lastRatesRefresh: ${_userPreferences?.lastRatesRefresh}');
+      print('   Before canRefreshToday: $beforeCanRefresh');
+      print('   After canRefreshToday: ${canRefreshRatesToday}');
+      
+      // Let any listeners know the state has been updated
+      notifyListeners();
+    } catch (e) {
+      print('❌ Error reloading user preferences: $e');
+    }
+    
+    return;
+  }
+
+  // Update the last refresh timestamp
+  Future<void> updateLastRefreshTimestamp(DateTime timestamp) async {
+    try {
+      print('🔄 CurrencyProvider: Updating lastRatesRefresh to $timestamp');
+      
+      if (_userPreferences != null) {
+        // Create a new preferences object with the updated timestamp
+        final updatedPrefs = _userPreferences!.copyWith(
+          lastRatesRefresh: timestamp,
+        );
+        
+        // Save to storage
+        await _storageService.saveUserPreferences(updatedPrefs);
+        
+        // Update in memory
+        _userPreferences = updatedPrefs;
+        
+        // Notify listeners
+        notifyListeners();
+        
+        print('🔄 lastRatesRefresh updated successfully');
+      } else {
+        print('❌ Cannot update lastRatesRefresh: userPreferences is null');
+      }
+    } catch (e) {
+      print('❌ Error updating lastRatesRefresh: $e');
+    }
   }
 } 
