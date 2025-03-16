@@ -75,85 +75,67 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
       return;
     }
     
-    setState(() {
-      if (_selectedCurrencies.contains(currencyCode)) {
-        // Remove currency
-        _selectedCurrencies.remove(currencyCode);
-      } else {
-        // Add currency
-        final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
-        if (!userPrefs.isPremium && _selectedCurrencies.length >= 5) {
-          // Show premium limit dialog
-          showCurrencyLimitDialog(context);
-          return;
-        }
-        
-        _selectedCurrencies.add(currencyCode);
+    final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+    
+    if (_selectedCurrencies.contains(currencyCode)) {
+      // Remove currency
+      _selectedCurrencies.remove(currencyCode);
+      // Save changes immediately
+      await userPrefs.setInitialCurrencies(
+        baseCurrency: _baseCurrencyCode,
+        selectedCurrencies: _selectedCurrencies.toList(),
+      );
+    } else {
+      // Add currency
+      if (!userPrefs.isPremium && _selectedCurrencies.length >= 5) {
+        // Show premium limit dialog
+        showCurrencyLimitDialog(context);
+        return;
       }
-      _hasChanges = true;
-    });
+      
+      _selectedCurrencies.add(currencyCode);
+      // Save changes immediately
+      await userPrefs.setInitialCurrencies(
+        baseCurrency: _baseCurrencyCode,
+        selectedCurrencies: _selectedCurrencies.toList(),
+      );
+    }
+    
+    setState(() {});
   }
   
   // Method to set a currency as the base currency
-  void _setBaseCurrency(String currencyCode) {
-    setState(() {
-      // Make sure the currency is in the selected list
-      if (!_selectedCurrencies.contains(currencyCode)) {
-        _selectedCurrencies.add(currencyCode);
-      }
-      
-      _baseCurrencyCode = currencyCode;
-      _hasChanges = true;
-    });
-    
-    // Show confirmation
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$currencyCode set as base currency')),
-    );
-  }
-  
-  void _saveChanges() async {
-    if (!_hasChanges) {
-      print('No changes to save, returning to previous screen');
-      Navigator.pop(context);
-      return;
+  void _setBaseCurrency(String currencyCode) async {
+    // Make sure the currency is in the selected list
+    if (!_selectedCurrencies.contains(currencyCode)) {
+      _selectedCurrencies.add(currencyCode);
     }
     
+    _baseCurrencyCode = currencyCode;
+    
+    // Save changes immediately
     final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
     final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
     
-    // Show loading indicator
-    setState(() {
-      _isLoading = true;
-    });
+    // Update storage
+    await userPrefs.setInitialCurrencies(
+      baseCurrency: _baseCurrencyCode,
+      selectedCurrencies: _selectedCurrencies.toList(),
+    );
     
-    try {
-      print('Saving currencies: Base=${_baseCurrencyCode}, Selected=${_selectedCurrencies.join(", ")}');
-      
-      // Set currencies in storage
-      await userPrefs.setInitialCurrencies(
-        baseCurrency: _baseCurrencyCode,
-        selectedCurrencies: _selectedCurrencies,
-      );
-      
-      // Update the currency provider
-      currencyProvider.selectCurrencies(_selectedCurrencies);
-      currencyProvider.setBaseCurrency(_baseCurrencyCode);
-      
-      print('Successfully saved currency preferences');
-      
-      // Return to home screen
-      if (mounted) {
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      print('Error saving currency preferences: $e');
-      setState(() {
-        _isLoading = false;
-      });
-      
+    // Update currency provider
+    currencyProvider.setBaseCurrency(_baseCurrencyCode);
+    currencyProvider.selectCurrencies(_selectedCurrencies);
+    
+    setState(() {});
+    
+    // Show confirmation
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving changes: $e')),
+        SnackBar(
+          content: Text('$currencyCode set as base currency'),
+          duration: const Duration(seconds: 1),
+        ),
       );
     }
   }
@@ -181,105 +163,73 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
     
     return WillPopScope(
       onWillPop: () async {
-        // If there are changes, save them or confirm discard
-        if (_hasChanges) {
-          // Ask the user if they want to save changes before leaving
-          final result = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Save changes?'),
-              content: const Text('You have unsaved changes. Do you want to save them before leaving?'),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop(false); // Don't save, just leave
-                  },
-                  child: const Text('Discard'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pop(true); // Save and leave
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-            ),
-          );
-          
-          // If user clicked "Save", or the dialog was dismissed, save changes
-          if (result == true) {
-            _saveChanges();
-            return false; // Don't pop here, _saveChanges will handle navigation
-          }
-          
-          // If user clicked "Discard", allow the screen to be popped
-          return true;
-        }
-        
-        // No changes, allow the screen to be popped
+        // Just return true to allow popping without showing save dialog
         return true;
       },
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Currencies'),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              child: TextButton(
-                onPressed: _saveChanges,
-                style: ButtonStyle(
-                  foregroundColor: MaterialStateProperty.all(
-                    Theme.of(context).colorScheme.onPrimary,
-                  ),
-                  textStyle: MaterialStateProperty.all(
-                    const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  padding: MaterialStateProperty.all(
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  ),
-                ),
-                child: const Text('SAVE'),
-              ),
-            ),
-          ],
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+          ),
         ),
         body: Column(
           children: [
-            // Search bar
+            // Search field
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: TextField(
                 controller: _searchController,
+                onChanged: (value) {
+                  setState(() {
+                    _searchQuery = value.toLowerCase();
+                  });
+                },
                 decoration: InputDecoration(
                   hintText: 'Search currencies',
                   prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _searchQuery.isNotEmpty 
-                      ? IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            setState(() {
-                              _searchQuery = '';
-                              _searchController.clear();
-                            });
-                          },
-                        )
-                      : null,
+                  suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                        },
+                      )
+                    : null,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF8FD584),
+                      width: 1,
+                    ),
                   ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF8FD584),
+                      width: 1,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF8FD584),
+                      width: 2,
+                    ),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
                 ),
-                onChanged: (value) {
-                  setState(() {
-                    _searchQuery = value;
-                  });
-                },
               ),
             ),
             
-            // Selected Count
+            // Selected count
             if (_selectedCurrencies.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -305,148 +255,171 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
                 ),
               ),
             
-            // Loading indicator or currency list
+            // Currency list
             Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : filteredCurrencies.isEmpty
-                      ? const Center(child: Text('No currencies found'))
-                      : ListView(
-                          children: [
-                            // Show selected currencies section if there are any selected currencies in search results
-                            if (selectedCurrencies.isNotEmpty) ...[
-                              // Divider between selected count and list
-                              const Divider(),
-                              ...selectedCurrencies.map((currency) => _buildCurrencyTile(
-                                currency: currency,
-                                isSelected: true, 
-                                isBaseCurrency: currency.code == _baseCurrencyCode
-                              )),
-                            ],
-                            
-                            // Show unselected currencies
-                            if (unselectedCurrencies.isNotEmpty) ...[
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                                child: Row(
-                                  children: [
-                                    Text(
-                                      'Available Currencies',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: Theme.of(context).textTheme.bodyLarge?.color,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(context).colorScheme.surface,
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: Theme.of(context).dividerColor,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        '${unselectedCurrencies.length}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Divider(),
-                              ...unselectedCurrencies.map((currency) => _buildCurrencyTile(
-                                currency: currency,
-                                isSelected: false, 
-                                isBaseCurrency: false
-                              )),
-                            ],
-                          ],
+              child: ListView(
+                children: [
+                  // Selected currencies section
+                  if (selectedCurrencies.isNotEmpty) ...[
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                      child: Text(
+                        'Selected Currencies',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey,
                         ),
+                      ),
+                    ),
+                    ...selectedCurrencies.map((currency) => ListTile(
+                      leading: SizedBox(
+                        width: 36,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Image.network(
+                            currency.flagUrl,
+                            width: 36,
+                            height: 24,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.flag, color: Colors.grey),
+                          ),
+                        ),
+                      ),
+                      title: Text(
+                        currency.code,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(currency.name),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Star container with fixed width
+                          SizedBox(
+                            width: 40,
+                            child: currency.code == _baseCurrencyCode
+                              ? const Icon(
+                                  Icons.star_rounded,
+                                  color: Color(0xFF8FD584),
+                                  size: 28,
+                                )
+                              : IconButton(
+                                  icon: const Icon(
+                                    Icons.star_outline_rounded,
+                                    size: 28,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  onPressed: () => _setBaseCurrency(currency.code),
+                                  tooltip: 'Set as base currency',
+                                ),
+                          ),
+                          // Checkbox with consistent spacing
+                          Transform.scale(
+                            scale: 1.2,
+                            child: Checkbox(
+                              value: true,
+                              onChanged: (bool? value) {
+                                _toggleCurrency(currency.code);
+                              },
+                              activeColor: const Color(0xFF8FD584),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )),
+                    
+                    // Divider between sections
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Divider(),
+                    ),
+                  ],
+                  
+                  // Available currencies section
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Available Currencies',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surfaceVariant,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${unselectedCurrencies.length}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ...unselectedCurrencies.map((currency) => ListTile(
+                    leading: SizedBox(
+                      width: 36,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: Image.network(
+                          currency.flagUrl,
+                          width: 36,
+                          height: 24,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(Icons.flag, color: Colors.grey),
+                        ),
+                      ),
+                    ),
+                    title: Text(
+                      currency.code,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(currency.name),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Empty space to match selected items layout
+                        const SizedBox(width: 40),
+                        Transform.scale(
+                          scale: 1.2,
+                          child: Checkbox(
+                            value: false,
+                            onChanged: (bool? value) {
+                              _toggleCurrency(currency.code);
+                            },
+                            activeColor: const Color(0xFF8FD584),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )),
+                ],
+              ),
             ),
           ],
         ),
       ),
-    );
-  }
-  
-  // Helper method to build currency tile
-  Widget _buildCurrencyTile({
-    required dynamic currency, 
-    required bool isSelected, 
-    required bool isBaseCurrency
-  }) {
-    return ListTile(
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: Image.network(
-          currency.flagUrl,
-          width: 32,
-          height: 24,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              width: 32,
-              height: 24,
-              color: Colors.grey.shade300,
-              child: Center(
-                child: Text(
-                  currency.code.substring(0, 2),
-                  style: const TextStyle(fontSize: 10),
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-      title: Text(
-        currency.code,
-        style: TextStyle(
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          color: isBaseCurrency
-              ? Theme.of(context).colorScheme.primary
-              : null,
-        ),
-      ),
-      subtitle: Text(currency.name),
-      trailing: isSelected
-          ? SizedBox(
-              width: 80, // Fixed width to ensure alignment
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  // Star icon with consistent position
-                  Container(
-                    width: 40,
-                    alignment: Alignment.center,
-                    child: isBaseCurrency
-                      ? const Icon(Icons.star, color: Colors.amber)
-                      : IconButton(
-                          icon: const Icon(Icons.star_outline),
-                          padding: EdgeInsets.zero,
-                          iconSize: 24,
-                          visualDensity: VisualDensity.compact,
-                          tooltip: 'Set as base currency',
-                          onPressed: () => _setBaseCurrency(currency.code),
-                        ),
-                  ),
-                  // Checkmark with consistent position
-                  Container(
-                    width: 24,
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.check, color: Colors.green),
-                  ),
-                ],
-              ),
-            )
-          : null,
-      onTap: () => _toggleCurrency(currency.code),
     );
   }
 } 

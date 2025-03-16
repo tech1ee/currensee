@@ -174,7 +174,10 @@ class PremiumPromptDialog extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   TextButton(
-                    onPressed: onCancel,
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      onCancel();
+                    },
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                     ),
@@ -182,7 +185,6 @@ class PremiumPromptDialog extends StatelessWidget {
                   ),
                   ElevatedButton(
                     onPressed: () {
-                      // Close dialog first before proceeding with purchase
                       Navigator.of(context).pop();
                       onPurchase();
                     },

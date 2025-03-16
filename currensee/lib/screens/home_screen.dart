@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +13,7 @@ import '../services/purchase_service.dart';
 import '../services/ad_service.dart';
 import 'currencies_screen.dart';
 import 'settings_screen.dart';
+import 'package:intl/intl.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -30,8 +32,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _adService.loadInterstitialAd(); // Preload interstitial ad
     
     // Schedule loading after build is complete
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadSelectedCurrencies();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadSelectedCurrencies();
+      await _handleAutoRefresh();
     });
   }
   
@@ -43,6 +46,32 @@ class _HomeScreenState extends State<HomeScreen> {
     
     if (userPrefs.selectedCurrencyCodes.isNotEmpty) {
       await currencyProvider.reloadSelectedCurrencies(userPrefs.selectedCurrencyCodes);
+    }
+  }
+
+  // Handle automatic refresh on app launch
+  Future<void> _handleAutoRefresh() async {
+    if (!mounted) return;
+    
+    final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+    final isPremium = currencyProvider.userPreferences?.isPremium ?? false;
+    final canRefreshToday = currencyProvider.canRefreshRatesToday;
+    
+    print('🔄 AUTO REFRESH CHECK:');
+    print('   isPremium: $isPremium');
+    print('   canRefreshToday: $canRefreshToday');
+    
+    // Premium users get automatic refresh on every launch
+    if (isPremium) {
+      print('🔄 Premium user - auto refreshing rates');
+      await _refreshRates();
+    } 
+    // Free users only get automatic refresh if they haven't refreshed today
+    else if (canRefreshToday) {
+      print('🔄 Free user - has not refreshed today - auto refreshing rates');
+      await _refreshRates();
+    } else {
+      print('🔄 Free user - already refreshed today - skipping auto refresh');
     }
   }
 
@@ -96,7 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final canRefreshToday = currencyProvider.canRefreshRatesToday;
     final lastRefresh = currencyProvider.userPreferences?.lastRatesRefresh;
     
-    print('🔄 REFRESH CHECK:');
+    print('🔄 MANUAL REFRESH CHECK:');
     print('   isPremium: $isPremium');
     print('   canRefreshToday: $canRefreshToday');
     print('   lastRefresh: $lastRefresh');
@@ -325,14 +354,44 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         centerTitle: false,
         actions: [
-          IconButton(
-            icon: Icon(
-              Icons.refresh_rounded,
-              color: _isRefreshing 
-                  ? Theme.of(context).disabledColor
-                  : Theme.of(context).colorScheme.primary,
-            ),
-            onPressed: _isRefreshing ? null : _refreshRates,
+          // Refresh button with timestamp
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (currencyProvider.userPreferences?.lastRatesRefresh != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        DateFormat('dd.MM').format(currencyProvider.userPreferences!.lastRatesRefresh!),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.4),
+                        ),
+                      ),
+                      Text(
+                        DateFormat('HH:mm').format(currencyProvider.userPreferences!.lastRatesRefresh!),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              IconButton(
+                icon: Icon(
+                  Icons.refresh_rounded,
+                  color: _isRefreshing 
+                      ? Theme.of(context).disabledColor
+                      : Theme.of(context).colorScheme.primary,
+                ),
+                onPressed: _isRefreshing ? null : _refreshRates,
+              ),
+            ],
           ),
           Padding(
             padding: const EdgeInsets.only(right: 8.0),
@@ -434,151 +493,187 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 )
-              : currencyProvider.selectedCurrencies.length == 1
-                ? ReorderableListView.builder(
-                    itemCount: currencyProvider.selectedCurrencies.length,
-                    padding: const EdgeInsets.only(bottom: 16, top: 8),
-                    onReorder: (oldIndex, newIndex) {
-                      // Get the base currency index
-                      final baseCurrencyIndex = currencyProvider.selectedCurrencies
-                          .indexWhere((c) => c.code == userPrefs.baseCurrencyCode);
-                      
-                      // Skip reordering if trying to move base currency
-                      if (oldIndex == baseCurrencyIndex) return;
-                      
-                      // Adjust indices for ReorderableListView behavior
-                      if (oldIndex < newIndex) {
-                        newIndex -= 1;
-                      }
-                      
-                      // Skip if trying to move an item before the base currency
-                      if (newIndex < baseCurrencyIndex && baseCurrencyIndex > 0) {
-                        newIndex = baseCurrencyIndex;
-                      }
-                      
-                      // Process the reordering
-                      final currencies = List<Currency>.from(currencyProvider.selectedCurrencies);
-                      final currency = currencies.removeAt(oldIndex);
-                      currencies.insert(newIndex, currency);
-                      
-                      // Update user preferences with new order
-                      final newOrder = currencies.map((c) => c.code).toList();
-                      userPrefs.setInitialCurrencies(
-                        baseCurrency: userPrefs.baseCurrencyCode,
-                        selectedCurrencies: newOrder,
-                      );
-                      currencyProvider.selectCurrencies(newOrder);
-                    },
-                    itemBuilder: (context, index) {
-                      final currency = currencyProvider.selectedCurrencies[index];
-                      final isBaseCurrency = currency.code == userPrefs.baseCurrencyCode;
-                      
-                      return ReorderableDragStartListener(
-                        key: ValueKey('draggable_${currency.code}'),
-                        index: index,
-                        enabled: !isBaseCurrency, // Only non-base currencies can be dragged
-                        child: CurrencyListItem(
-                          currency: currency,
-                          isBaseCurrency: isBaseCurrency,
-                          onValueChanged: (code, value) {
-                            currencyProvider.updateCurrencyValue(code, value);
-                          },
-                          onLongPress: () {
-                            // No action for long press anymore
-                          },
-                          onSetAsBase: () {
-                            _setBaseCurrency(currency.code);
-                          },
-                          index: index,
+              : Column(
+                  children: [
+                    // Table header
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.background,
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Theme.of(context).dividerColor.withOpacity(0.1),
+                            width: 1,
+                          ),
                         ),
-                      );
-                    },
-                  )
-                : ReorderableListView.builder(
-                    itemCount: currencyProvider.selectedCurrencies.length,
-                    padding: const EdgeInsets.only(bottom: 16, top: 8),
-                    onReorder: (oldIndex, newIndex) {
-                      // Get the base currency index
-                      final baseCurrencyIndex = currencyProvider.selectedCurrencies
-                          .indexWhere((c) => c.code == userPrefs.baseCurrencyCode);
-                      
-                      // Skip reordering if trying to move base currency
-                      if (oldIndex == baseCurrencyIndex) return;
-                      
-                      // Adjust indices for ReorderableListView behavior
-                      if (oldIndex < newIndex) {
-                        newIndex -= 1;
-                      }
-                      
-                      // Skip if trying to move an item before the base currency
-                      if (newIndex < baseCurrencyIndex && baseCurrencyIndex > 0) {
-                        newIndex = baseCurrencyIndex;
-                      }
-                      
-                      // Process the reordering
-                      final currencies = List<Currency>.from(currencyProvider.selectedCurrencies);
-                      final currency = currencies.removeAt(oldIndex);
-                      currencies.insert(newIndex, currency);
-                      
-                      // Update user preferences with new order
-                      final newOrder = currencies.map((c) => c.code).toList();
-                      userPrefs.setInitialCurrencies(
-                        baseCurrency: userPrefs.baseCurrencyCode,
-                        selectedCurrencies: newOrder,
-                      );
-                      currencyProvider.selectCurrencies(newOrder);
-                    },
-                    itemBuilder: (context, index) {
-                      final currency = currencyProvider.selectedCurrencies[index];
-                      final isBaseCurrency = currency.code == userPrefs.baseCurrencyCode;
-                      
-                      return ReorderableDragStartListener(
-                        key: ValueKey('draggable_${currency.code}'),
-                        index: index,
-                        enabled: !isBaseCurrency, // Only non-base currencies can be dragged
-                        child: CurrencyListItem(
-                          currency: currency,
-                          isBaseCurrency: isBaseCurrency,
-                          onValueChanged: (code, value) {
-                            currencyProvider.updateCurrencyValue(code, value);
-                          },
-                          onLongPress: () {
-                            // No action for long press anymore
-                          },
-                          onSetAsBase: () {
-                            _setBaseCurrency(currency.code);
-                          },
-                          index: index,
-                        ),
-                      );
-                    },
-                  ),
+                      ),
+                      child: Row(
+                        children: [
+                          // Flag column
+                          const SizedBox(width: 36),
+                          const SizedBox(width: 16),
+                          // Currency code column
+                          SizedBox(
+                            width: 60,
+                            child: Text(
+                              'Code',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                          // Currency name column
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              'Currency',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                          // Value column
+                          SizedBox(
+                            width: 120,
+                            child: Text(
+                              'Value',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ReorderableListView.builder(
+                        itemCount: currencyProvider.selectedCurrencies.length + 1,
+                        padding: EdgeInsets.zero,
+                        proxyDecorator: (child, index, animation) {
+                          return AnimatedBuilder(
+                            animation: animation,
+                            builder: (BuildContext context, Widget? child) {
+                              final double animValue = Curves.easeInOut.transform(animation.value);
+                              final double elevation = lerpDouble(0, 6, animValue)!;
+                              return Material(
+                                elevation: elevation,
+                                color: Theme.of(context).colorScheme.surface,
+                                shadowColor: Theme.of(context).shadowColor.withOpacity(0.1),
+                                child: child,
+                              );
+                            },
+                            child: child,
+                          );
+                        },
+                        onReorder: (oldIndex, newIndex) {
+                          // Don't allow reordering if either index is the add button
+                          if (oldIndex == currencyProvider.selectedCurrencies.length || 
+                              newIndex == currencyProvider.selectedCurrencies.length) {
+                            return;
+                          }
+                          
+                          // Get the base currency index
+                          final baseCurrencyIndex = currencyProvider.selectedCurrencies
+                              .indexWhere((c) => c.code == userPrefs.baseCurrencyCode);
+                          
+                          // Skip reordering if trying to move base currency
+                          if (oldIndex == baseCurrencyIndex) return;
+                          
+                          // Adjust indices for ReorderableListView behavior
+                          if (oldIndex < newIndex) {
+                            newIndex -= 1;
+                          }
+                          
+                          // Skip if trying to move an item before the base currency
+                          if (newIndex < baseCurrencyIndex && baseCurrencyIndex > 0) {
+                            newIndex = baseCurrencyIndex;
+                          }
+                          
+                          // Process the reordering
+                          final currencies = List<Currency>.from(currencyProvider.selectedCurrencies);
+                          final currency = currencies.removeAt(oldIndex);
+                          currencies.insert(newIndex, currency);
+                          
+                          // Update user preferences with new order
+                          final newOrder = currencies.map((c) => c.code).toList();
+                          userPrefs.setInitialCurrencies(
+                            baseCurrency: userPrefs.baseCurrencyCode,
+                            selectedCurrencies: newOrder,
+                          );
+                          currencyProvider.selectCurrencies(newOrder);
+                        },
+                        itemBuilder: (context, index) {
+                          // If this is the last index, show the add button
+                          if (index == currencyProvider.selectedCurrencies.length) {
+                            return Container(
+                              key: const ValueKey('add_currency_button'),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  top: BorderSide(
+                                    color: Theme.of(context).dividerColor.withOpacity(0.1),
+                                    width: 1,
+                                  ),
+                                ),
+                              ),
+                              child: TextButton(
+                                onPressed: _showCurrenciesScreen,
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                                  alignment: Alignment.center,
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add_rounded,
+                                      size: 20,
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Add Currency',
+                                      style: TextStyle(
+                                        color: Theme.of(context).colorScheme.primary,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+                          
+                          final currency = currencyProvider.selectedCurrencies[index];
+                          final isBaseCurrency = currency.code == userPrefs.baseCurrencyCode;
+                          
+                          return ReorderableDragStartListener(
+                            key: ValueKey('draggable_${currency.code}'),
+                            index: index,
+                            enabled: !isBaseCurrency,
+                            child: CurrencyListItem(
+                              currency: currency,
+                              isBaseCurrency: isBaseCurrency,
+                              onValueChanged: (code, value) => currencyProvider.updateCurrencyValue(code, value),
+                              index: index,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
           ),
-          if (currencyProvider.selectedCurrencies.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-              child: ElevatedButton(
-                onPressed: _showCurrenciesScreen,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(52),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  elevation: 0,
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                child: const Text(
-                  'Add Currency',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-              ),
-            ),
           // Banner ad at the bottom for free users
           AdBannerWidget(isPremium: userPrefs.isPremium),
         ],
