@@ -47,19 +47,40 @@ class ApiService {
     List<Currency> currencies = [];
 
     data.forEach((code, name) {
-      // Make sure code is at least 2 characters for flag URL
-      String flagCode = code.length >= 2 ? code.substring(0, 2).toUpperCase() : 'UN';
+      String flagUrl;
+      String upperCode = code.toUpperCase();
       
-      // Special cases for flag URLs
-      if (code == 'eur') flagCode = 'EU';
-      if (code == 'btc') flagCode = 'BTC'; // Will use a fallback image
-      if (code == 'eth') flagCode = 'ETH'; // Will use a fallback image
+      // Special cases for flags
+      switch (upperCode) {
+        case 'EUR':
+          // Use EU flag from CountryFlags.io
+          flagUrl = 'https://flagcdn.com/w160/eu.png';
+          break;
+        case 'BTC':
+        case 'ETH':
+        case 'USDT':
+        case 'XRP':
+        case 'DOGE':
+          // Use cryptocurrency icon from CoinGecko
+          flagUrl = 'https://static.coingecko.com/s/thumbnail-${code.toLowerCase()}-64.png';
+          break;
+        default:
+          // For regular currencies, use country flag if code is 2-3 characters
+          if (code.length >= 2) {
+            String flagCode = code.substring(0, 2).toUpperCase();
+            // Use CountryFlags.io for better reliability and consistent sizing
+            flagUrl = 'https://flagcdn.com/w160/${flagCode.toLowerCase()}.png';
+          } else {
+            // Fallback for unknown currencies
+            flagUrl = '';
+          }
+      }
       
       currencies.add(Currency(
-        code: code.toUpperCase(),
+        code: upperCode,
         name: name.toString(),
-        symbol: _getCurrencySymbol(code.toUpperCase()),
-        flagUrl: 'https://flagsapi.com/$flagCode/flat/64.png',
+        symbol: _getCurrencySymbol(upperCode),
+        flagUrl: flagUrl,
       ));
     });
 
@@ -166,18 +187,18 @@ class ApiService {
   List<Currency> _getMockCurrencies() {
     // Common currencies
     final mockCurrencies = [
-      Currency(code: 'USD', name: 'United States Dollar', symbol: '\$', flagUrl: 'https://flagsapi.com/US/flat/64.png'),
-      Currency(code: 'EUR', name: 'Euro', symbol: '€', flagUrl: 'https://flagsapi.com/EU/flat/64.png'),
-      Currency(code: 'GBP', name: 'British Pound', symbol: '£', flagUrl: 'https://flagsapi.com/GB/flat/64.png'),
-      Currency(code: 'JPY', name: 'Japanese Yen', symbol: '¥', flagUrl: 'https://flagsapi.com/JP/flat/64.png'),
-      Currency(code: 'AUD', name: 'Australian Dollar', symbol: 'A\$', flagUrl: 'https://flagsapi.com/AU/flat/64.png'),
-      Currency(code: 'CAD', name: 'Canadian Dollar', symbol: 'C\$', flagUrl: 'https://flagsapi.com/CA/flat/64.png'),
-      Currency(code: 'CHF', name: 'Swiss Franc', symbol: 'Fr', flagUrl: 'https://flagsapi.com/CH/flat/64.png'),
-      Currency(code: 'CNY', name: 'Chinese Yuan', symbol: '¥', flagUrl: 'https://flagsapi.com/CN/flat/64.png'),
-      Currency(code: 'INR', name: 'Indian Rupee', symbol: '₹', flagUrl: 'https://flagsapi.com/IN/flat/64.png'),
-      Currency(code: 'AED', name: 'United Arab Emirates Dirham', symbol: 'د.إ', flagUrl: 'https://flagsapi.com/AE/flat/64.png'),
-      Currency(code: 'ALL', name: 'Albanian Lek', symbol: 'L', flagUrl: 'https://flagsapi.com/AL/flat/64.png'),
-      Currency(code: 'AMD', name: 'Armenian Dram', symbol: '֏', flagUrl: 'https://flagsapi.com/AM/flat/64.png'),
+      Currency(code: 'USD', name: 'United States Dollar', symbol: '\$', flagUrl: 'https://flagcdn.com/w160/us.png'),
+      Currency(code: 'EUR', name: 'Euro', symbol: '€', flagUrl: 'https://flagcdn.com/w160/eu.png'),
+      Currency(code: 'GBP', name: 'British Pound', symbol: '£', flagUrl: 'https://flagcdn.com/w160/gb.png'),
+      Currency(code: 'JPY', name: 'Japanese Yen', symbol: '¥', flagUrl: 'https://flagcdn.com/w160/jp.png'),
+      Currency(code: 'AUD', name: 'Australian Dollar', symbol: 'A\$', flagUrl: 'https://flagcdn.com/w160/au.png'),
+      Currency(code: 'CAD', name: 'Canadian Dollar', symbol: 'C\$', flagUrl: 'https://flagcdn.com/w160/ca.png'),
+      Currency(code: 'CHF', name: 'Swiss Franc', symbol: 'Fr', flagUrl: 'https://flagcdn.com/w160/ch.png'),
+      Currency(code: 'CNY', name: 'Chinese Yuan', symbol: '¥', flagUrl: 'https://flagcdn.com/w160/cn.png'),
+      Currency(code: 'INR', name: 'Indian Rupee', symbol: '₹', flagUrl: 'https://flagcdn.com/w160/in.png'),
+      Currency(code: 'AED', name: 'United Arab Emirates Dirham', symbol: 'د.إ', flagUrl: 'https://flagcdn.com/w160/ae.png'),
+      Currency(code: 'ALL', name: 'Albanian Lek', symbol: 'L', flagUrl: 'https://flagcdn.com/w160/al.png'),
+      Currency(code: 'AMD', name: 'Armenian Dram', symbol: '֏', flagUrl: 'https://flagcdn.com/w160/am.png'),
     ];
     
     return mockCurrencies;

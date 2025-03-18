@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="220" fill="#8FD584"/>
+  
+  <!-- Exchange arrows -->
+  <g transform="translate(512, 512)" stroke="white" stroke-width="80" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Top arrow -->
+    <path d="M-200 -100 L200 -100"/>
+    <path d="M120 -180 L200 -100 L120 -20"/>
+    
+    <!-- Bottom arrow -->
+    <path d="M200 100 L-200 100"/>
+    <path d="M-120 20 L-200 100 L-120 180"/>
+  </g>
+</svg> 

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/currency.dart';
 import '../providers/user_preferences_provider.dart';
 import '../services/api_service.dart';
+import '../widgets/currency_flag_placeholder.dart';
 import 'home_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -15,6 +16,9 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final ApiService _apiService = ApiService();
   final PageController _pageController = PageController();
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  String _searchQuery = '';
   int _currentPage = 0;
   
   // Selected currencies
@@ -29,6 +33,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void initState() {
     super.initState();
     _loadCurrencies();
+    // Request focus after build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _searchFocusNode.requestFocus();
+    });
   }
   
   Future<void> _loadCurrencies() async {
@@ -55,22 +63,44 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
   
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _pageController.dispose();
+    super.dispose();
+  }
+  
   void _nextPage() {
     if (_currentPage < 1) {
+      // Clear search and request focus when moving to next page
+      setState(() {
+        _searchController.clear();
+        _searchQuery = '';
+      });
       _pageController.nextPage(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
-      );
+      ).then((_) {
+        _searchFocusNode.requestFocus();
+      });
     } else {
       _completeOnboarding();
     }
   }
   
   void _previousPage() {
+    // Clear search and request focus when moving to previous page
+    setState(() {
+      _searchController.clear();
+      _searchQuery = '';
+    });
     _pageController.previousPage(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
-    );
+    ).then((_) {
+      _searchFocusNode.requestFocus();
+    });
   }
   
   Future<void> _completeOnboarding() async {
@@ -170,6 +200,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
   
   Widget _buildBaseCurrencyPage() {
+    // Filter currencies based on search query
+    final filteredCurrencies = _searchQuery.isEmpty
+        ? _allCurrencies
+        : _allCurrencies.where((currency) =>
+            currency.code.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+            currency.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Column(
@@ -191,13 +228,63 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               color: Colors.grey,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          // Search field
+          Container(
+            height: 48,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: TextField(
+              controller: _searchController,
+              autofocus: false,
+              textInputAction: TextInputAction.search,
+              keyboardType: TextInputType.text,
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value.toLowerCase();
+                });
+              },
+              style: Theme.of(context).textTheme.bodyLarge,
+              decoration: InputDecoration(
+                hintText: 'Search currencies',
+                hintStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 16,
+                ),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  size: 22,
+                ),
+                suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(
+                        Icons.clear_rounded,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        size: 20,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _searchController.clear();
+                          _searchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           Expanded(
             child: ListView.separated(
-              itemCount: _allCurrencies.length,
+              itemCount: filteredCurrencies.length,
               separatorBuilder: (context, index) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
-                final currency = _allCurrencies[index];
+                final currency = filteredCurrencies[index];
                 final isSelected = currency.code == _selectedBaseCurrency;
                 
                 return Container(
@@ -207,12 +294,29 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                   child: ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    leading: Image.network(
-                      currency.flagUrl,
+                    leading: SizedBox(
                       width: 44,
                       height: 44,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Icon(Icons.flag, color: Colors.grey),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          currency.flagUrl,
+                          width: 44,
+                          height: 44,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return CurrencyFlagPlaceholder(
+                              size: 44,
+                              currencyCode: currency.code,
+                            );
+                          },
+                          errorBuilder: (_, __, ___) => CurrencyFlagPlaceholder(
+                            size: 44,
+                            currencyCode: currency.code,
+                          ),
+                        ),
+                      ),
                     ),
                     title: Text(
                       currency.name,
@@ -243,9 +347,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
   
   Widget _buildSelectCurrenciesPage() {
-    // Filter out the base currency from available currencies
-    final availableCurrencies = _allCurrencies.where((c) => c.code != _selectedBaseCurrency).toList();
-    
+    // Filter currencies based on search query
+    final filteredCurrencies = _searchQuery.isEmpty
+        ? _allCurrencies
+        : _allCurrencies.where((currency) =>
+            currency.code.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+            currency.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Column(
@@ -267,13 +375,73 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               color: Colors.grey,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          // Search field
+          Container(
+            height: 48,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              keyboardType: TextInputType.text,
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value.toLowerCase();
+                });
+              },
+              style: Theme.of(context).textTheme.bodyLarge,
+              decoration: InputDecoration(
+                hintText: 'Search currencies',
+                hintStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 16,
+                ),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  size: 22,
+                ),
+                suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(
+                        Icons.clear_rounded,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        size: 20,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _searchController.clear();
+                          _searchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Selected count
+          Text(
+            'Selected: ${_selectedCurrencies.length}/5',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 8),
           Expanded(
             child: ListView.separated(
-              itemCount: availableCurrencies.length,
+              itemCount: filteredCurrencies.length,
               separatorBuilder: (context, index) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
-                final currency = availableCurrencies[index];
+                final currency = filteredCurrencies[index];
                 final isSelected = _selectedCurrencies.contains(currency.code);
                 
                 return Container(
@@ -283,12 +451,29 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                   child: ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    leading: Image.network(
-                      currency.flagUrl,
+                    leading: SizedBox(
                       width: 44,
                       height: 44,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Icon(Icons.flag, color: Colors.grey),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          currency.flagUrl,
+                          width: 44,
+                          height: 44,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return CurrencyFlagPlaceholder(
+                              size: 44,
+                              currencyCode: currency.code,
+                            );
+                          },
+                          errorBuilder: (_, __, ___) => CurrencyFlagPlaceholder(
+                            size: 44,
+                            currencyCode: currency.code,
+                          ),
+                        ),
+                      ),
                     ),
                     title: Text(
                       currency.name,

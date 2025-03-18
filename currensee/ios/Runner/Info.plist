@@ -54,5 +54,18 @@
 			<string>cstr6suwn9.skadnetwork</string>
 		</dict>
 	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
+	<key>UIRequiresFullScreen</key>
+	<true/>
+	<key>UIInputViewStyle</key>
+	<string>Default</string>
+	<key>UIAllowsDefaultTighteningForTruncation</key>
+	<true/>
+	<key>UIKeyboardLayoutGuide</key>
+	<dict>
+		<key>UIWindowSizeClass</key>
+		<string>Compact</string>
+	</dict>
 </dict>
 </plist>

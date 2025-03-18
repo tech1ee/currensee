@@ -299,10 +299,6 @@ class CurrencyProvider with ChangeNotifier {
     print('\n💰💰💰 UPDATING CURRENCY VALUE 💰💰💰');
     print('   Currency: $currencyCode');
     print('   New value: $newValue');
-    print('   Currently edited: $_currentlyEditedCurrencyCode');
-    
-    // Critical: Mark this currency as being edited during the update
-    _currentlyEditedCurrencyCode = currencyCode;
     
     // Skip if rates are not available
     if (_exchangeRates == null) {
@@ -328,44 +324,44 @@ class CurrencyProvider with ChangeNotifier {
         return;
       }
       
-      // CRITICAL: Create new list with same order to prevent position changes
-      List<Currency> updatedCurrencies = [];
+      // Create a new list to store updated currencies
+      List<Currency> updatedCurrencies = List.from(_selectedCurrencies);
       
-      // Process each currency while preserving original order
-      for (int i = 0; i < _selectedCurrencies.length; i++) {
-        final current = _selectedCurrencies[i];
+      // Update the edited currency's value
+      updatedCurrencies[index] = Currency(
+        code: updatedCurrencies[index].code,
+        name: updatedCurrencies[index].name,
+        symbol: updatedCurrencies[index].symbol,
+        flagUrl: updatedCurrencies[index].flagUrl,
+        value: newValue
+      );
+      
+      // Update all other currencies based on the new value
+      for (int i = 0; i < updatedCurrencies.length; i++) {
+        if (i == index) continue; // Skip the edited currency
         
-        if (current.code == currencyCode) {
-          // Update the edited currency
-          updatedCurrencies.add(Currency(
+        final current = updatedCurrencies[i];
+        try {
+          double convertedValue = _exchangeRates!.convert(
+            newValue, 
+            currencyCode, 
+            current.code
+          );
+          
+          // Round to 2 decimal places to avoid floating point issues
+          convertedValue = double.parse(convertedValue.toStringAsFixed(2));
+          
+          updatedCurrencies[i] = Currency(
             code: current.code,
             name: current.name,
             symbol: current.symbol,
             flagUrl: current.flagUrl,
-            value: newValue
-          ));
-        } else {
-          // For all other currencies, calculate new value
-          try {
-            double convertedValue = _exchangeRates!.convert(
-              newValue, 
-              currencyCode, 
-              current.code
-            );
-            
-            updatedCurrencies.add(Currency(
-              code: current.code,
-              name: current.name,
-              symbol: current.symbol,
-              flagUrl: current.flagUrl,
-              value: convertedValue
-            ));
-            print('   🔄 Recalculated ${current.code}: ${current.value} → $convertedValue');
-          } catch (e) {
-            // If there's an error, keep the original value
-            updatedCurrencies.add(current);
-            print('   ⚠️ Error calculating ${current.code}, keeping original value');
-          }
+            value: convertedValue
+          );
+          print('   🔄 Recalculated ${current.code}: ${current.value} → $convertedValue');
+        } catch (e) {
+          // If there's an error, keep the original value
+          print('   ⚠️ Error calculating ${current.code}, keeping original value');
         }
       }
       
@@ -375,9 +371,8 @@ class CurrencyProvider with ChangeNotifier {
       // Save the updated currency values
       await _storageService.saveCurrencyValues(_selectedCurrencies);
       
-      // Critical: Keep this currency marked as being edited
-      print('   ✅ Update complete, notifying listeners (keeping $currencyCode as edited)');
-      _currentlyEditedCurrencyCode = currencyCode;
+      // Notify listeners of the update
+      print('   ✅ Update complete, notifying listeners');
       notifyListeners();
       
     } catch (e) {
@@ -429,30 +424,32 @@ class CurrencyProvider with ChangeNotifier {
   Future<void> _recalculateValuesFromCurrency(String sourceCode, double sourceValue) async {
     if (_exchangeRates == null) return;
     
-    print('\n🧮🧮🧮 RECALCULATING all values from $sourceCode = $sourceValue 🧮🧮🧮');
+    print('\n🧮🧮🧮 RECALCULATING all values from $sourceCode = $sourceValue 🧮🧮');
     
-    // Ensure the source value is not zero to avoid division by zero issues
-    if (sourceValue == 0) {
-      print('   ⚠️ Source value is zero, setting all currencies to zero');
-      // If source value is zero, set all other currencies to zero
-      for (var i = 0; i < _selectedCurrencies.length; i++) {
-        if (_selectedCurrencies[i].code != sourceCode) {
-          _selectedCurrencies[i].value = 0;
-        }
-      }
+    // Create a new list to store updated currencies
+    List<Currency> updatedCurrencies = List.from(_selectedCurrencies);
+    
+    // Find the source currency index
+    final sourceIndex = updatedCurrencies.indexWhere((c) => c.code == sourceCode);
+    if (sourceIndex == -1) {
+      print('   ❌ Source currency not found: $sourceCode');
       return;
     }
     
+    // Update the source currency's value
+    updatedCurrencies[sourceIndex] = Currency(
+      code: updatedCurrencies[sourceIndex].code,
+      name: updatedCurrencies[sourceIndex].name,
+      symbol: updatedCurrencies[sourceIndex].symbol,
+      flagUrl: updatedCurrencies[sourceIndex].flagUrl,
+      value: sourceValue
+    );
+    
     // Loop through all currencies and update their values
-    for (var i = 0; i < _selectedCurrencies.length; i++) {
-      final targetCurrency = _selectedCurrencies[i];
+    for (var i = 0; i < updatedCurrencies.length; i++) {
+      if (i == sourceIndex) continue; // Skip the source currency
       
-      // Skip the source currency - it's already updated
-      if (targetCurrency.code == sourceCode) {
-        print('   Skipping $sourceCode (source currency)');
-        continue;
-      }
-      
+      final targetCurrency = updatedCurrencies[i];
       try {
         final oldValue = targetCurrency.value;
         
@@ -463,24 +460,48 @@ class CurrencyProvider with ChangeNotifier {
           targetCurrency.code,
         );
         
-        print('   ✅ Updated ${targetCurrency.code}: $oldValue → $newValue');
-        _selectedCurrencies[i].value = newValue;
+        // Round to 2 decimal places to avoid floating point issues
+        final roundedValue = double.parse(newValue.toStringAsFixed(2));
+        
+        print('   ✅ Updated ${targetCurrency.code}: $oldValue → $roundedValue');
+        updatedCurrencies[i] = Currency(
+          code: targetCurrency.code,
+          name: targetCurrency.name,
+          symbol: targetCurrency.symbol,
+          flagUrl: targetCurrency.flagUrl,
+          value: roundedValue
+        );
       } catch (e) {
         print('   ❌ Error calculating value for ${targetCurrency.code}: $e');
         
         // Use a fallback conversion
+        double fallbackValue;
         if (targetCurrency.code == _baseCurrencyCode) {
-          _selectedCurrencies[i].value = sourceValue; // If base currency, assume 1:1
+          fallbackValue = sourceValue; // If base currency, assume 1:1
         } else if (sourceCode == _baseCurrencyCode) {
-          _selectedCurrencies[i].value = sourceValue; // If converting from base, assume 1:1
+          fallbackValue = sourceValue; // If converting from base, assume 1:1
         } else {
-          _selectedCurrencies[i].value = sourceValue; // Default fallback
+          fallbackValue = sourceValue; // Default fallback
         }
+        
+        updatedCurrencies[i] = Currency(
+          code: targetCurrency.code,
+          name: targetCurrency.name,
+          symbol: targetCurrency.symbol,
+          flagUrl: targetCurrency.flagUrl,
+          value: fallbackValue
+        );
       }
     }
     
+    // Replace the currencies list with the updated one
+    _selectedCurrencies = updatedCurrencies;
+    
     // Save the updated currency values
     await _storageService.saveCurrencyValues(_selectedCurrencies);
+    
+    // Notify listeners of the update
+    notifyListeners();
     
     print('🧮🧮🧮 RECALCULATION COMPLETE 🧮🧮🧮\n');
   }

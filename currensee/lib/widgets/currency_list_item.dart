@@ -11,6 +11,9 @@ class CurrencyListItem extends StatefulWidget {
   final bool isBaseCurrency;
   final Function(String, double) onValueChanged;
   final int index;
+  final bool isEditing;
+  final VoidCallback onEditStart;
+  final VoidCallback onEditEnd;
 
   const CurrencyListItem({
     Key? key,
@@ -18,6 +21,9 @@ class CurrencyListItem extends StatefulWidget {
     required this.isBaseCurrency,
     required this.onValueChanged,
     required this.index,
+    required this.isEditing,
+    required this.onEditStart,
+    required this.onEditEnd,
   }) : super(key: key);
 
   @override
@@ -26,34 +32,21 @@ class CurrencyListItem extends StatefulWidget {
 
 class _CurrencyListItemState extends State<CurrencyListItem> {
   late TextEditingController _controller;
-  late FocusNode _focusNode;
-  bool _isFocused = false;
-  bool _isUserEditing = false;
-  bool _blockValueUpdates = false;
   Timer? _updateDebouncer;
+  bool _isEditing = false;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: _formatValue(widget.currency.value));
-    _focusNode = FocusNode();
-    _focusNode.addListener(() {
-      _onFocusChange(_focusNode.hasFocus);
-    });
   }
 
   @override
   void didUpdateWidget(CurrencyListItem oldWidget) {
     super.didUpdateWidget(oldWidget);
     
-    final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-    final isBeingEdited = currencyProvider.currentlyEditedCurrencyCode == widget.currency.code;
-    final needsUpdate = oldWidget.currency.code != widget.currency.code || 
-                       oldWidget.currency.value != widget.currency.value;
-    
-    final shouldSkipUpdate = _isFocused || isBeingEdited || _blockValueUpdates || _isUserEditing;
-    
-    if (needsUpdate && !shouldSkipUpdate) {
+    // Always update the controller text when the value changes
+    if (oldWidget.currency.value != widget.currency.value) {
       _updateControllerText();
     }
   }
@@ -61,104 +54,35 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
   void _updateControllerText() {
     final formattedValue = _formatValue(widget.currency.value);
     if (_controller.text != formattedValue) {
-      setState(() {
-        _controller.text = formattedValue;
-      });
-    }
-  }
-
-  void _onFocusChange(bool hasFocus) {
-    if (hasFocus) {
-      final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-      currencyProvider.setCurrentlyEditedCurrencyCode(widget.currency.code);
-      
-      if (widget.currency.value == 0) {
-        _controller.clear();
-      } else {
-        _controller.selection = TextSelection(
-          baseOffset: 0,
-          extentOffset: _controller.text.length,
-        );
-      }
-      
-      setState(() {
-        _isFocused = true;
-        _isUserEditing = true;
-        _blockValueUpdates = true;
-      });
-    } else {
-      _updateDebouncer?.cancel();
-      
-      if (_controller.text.isEmpty) {
-        widget.onValueChanged(widget.currency.code, 0);
-        _updateControllerText();
-      } else {
-        String cleanText = _controller.text.replaceAll(RegExp(r'[^\d\.,]'), '');
-        cleanText = cleanText.replaceAll(',', '.');
-        
-        double? value = double.tryParse(cleanText);
-        if (value != null) {
-          widget.onValueChanged(widget.currency.code, value);
-        } else if (_controller.text.isNotEmpty) {
-          _updateControllerText();
-        }
-      }
-      
-      final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-      currencyProvider.clearCurrentlyEditedCurrencyCode();
-      
-      setState(() {
-        _isFocused = false;
-        _isUserEditing = false;
-      });
-      
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted && !_focusNode.hasFocus) {
-          setState(() {
-            _blockValueUpdates = false;
-          });
-        }
-      });
+      _controller.text = formattedValue;
     }
   }
 
   String _formatValue(double value) {
     if (value == 0) return '0';
     
-    final formatter = NumberFormat.decimalPattern();
-    formatter.minimumFractionDigits = 2;  // Always show 2 decimal places
-    formatter.maximumFractionDigits = 2;  // Show exactly 2 digits after decimal
+    // Format with 2 decimal places first
+    String formatted = value.toStringAsFixed(2);
     
-    if (value.abs() < 0.0001) {
-      return value.toStringAsExponential(4);  // Keep precision for very small numbers
-    } else if (value.abs() < 0.01) {
-      return value.toStringAsFixed(4);  // Keep precision for small numbers
-    } else {
-      return formatter.format(value);  // Use standard formatting with two decimal places
-    }
-  }
-
-  @override
-  void dispose() {
-    _updateDebouncer?.cancel();
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
+    // Remove trailing zeros after decimal point
+    formatted = formatted.replaceAll(RegExp(r'\.?0*$'), '');
+    
+    // Split into whole and decimal parts
+    final parts = formatted.split('.');
+    final wholePart = parts[0];
+    
+    // Add commas to the whole part
+    final withCommas = wholePart.replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]},'
+    );
+    
+    // Recombine with decimal part if it exists
+    return parts.length > 1 ? '$withCommas.${parts[1]}' : withCommas;
   }
 
   @override
   Widget build(BuildContext context) {
-    final currencyProvider = Provider.of<CurrencyProvider>(context);
-    final isBeingEdited = currencyProvider.currentlyEditedCurrencyCode == widget.currency.code;
-    
-    if (!_isFocused && !_blockValueUpdates && _controller.text != _formatValue(widget.currency.value)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_isFocused && !_blockValueUpdates) {
-          _updateControllerText();
-        }
-      });
-    }
-    
     return Material(
       color: widget.isBaseCurrency 
           ? Theme.of(context).colorScheme.primary.withOpacity(0.08)
@@ -221,54 +145,52 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
               flex: 2,
               child: TextField(
                 controller: _controller,
-                focusNode: _focusNode,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 textAlign: TextAlign.right,
-                autofocus: false,
                 decoration: const InputDecoration.collapsed(
                   hintText: '',
                 ),
-                cursorWidth: 1.5,
-                cursorColor: Theme.of(context).colorScheme.primary,
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
                   letterSpacing: -0.3,
-                  color: isBeingEdited && _isFocused 
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).textTheme.bodyLarge?.color,
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
                 ),
-                onChanged: (text) {
-                  if (!_blockValueUpdates) {
-                    setState(() {
-                      _blockValueUpdates = true;
-                      _isUserEditing = true;
-                    });
+                onTap: () {
+                  setState(() {
+                    _isEditing = true;
+                  });
+                },
+                onChanged: (value) {
+                  // Clean the input value - remove any non-numeric characters except decimal point
+                  value = value.replaceAll(RegExp(r'[^\d\.]'), '');
+                  
+                  // Ensure only one decimal point
+                  final parts = value.split('.');
+                  if (parts.length > 2) {
+                    value = '${parts[0]}.${parts.sublist(1).join('')}';
                   }
                   
-                  _updateDebouncer?.cancel();
-                  _updateDebouncer = Timer(const Duration(milliseconds: 300), () {
-                    if (!mounted || text.isEmpty) return;
-                    
-                    // Clean the text and parse the number
-                    String cleanText = text.replaceAll(RegExp(r'[^\d\.,]'), '');
-                    cleanText = cleanText.replaceAll(',', '.');
-                    
-                    // Parse with double.parse for better precision with large numbers
-                    double? value;
-                    try {
-                      value = double.parse(cleanText);
-                    } catch (e) {
-                      print('Error parsing number: $e');
-                    }
-                    
-                    if (value != null) {
-                      final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-                      currencyProvider.setCurrentlyEditedCurrencyCode(widget.currency.code);
-                      
-                      widget.onValueChanged(widget.currency.code, value);
-                    }
+                  // Convert to double, defaulting to 0 if invalid
+                  double newValue = double.tryParse(value) ?? 0;
+                  
+                  // Update the value in the provider
+                  widget.onValueChanged(widget.currency.code, newValue);
+                  
+                  // Update the controller text immediately
+                  _updateControllerText();
+                },
+                onEditingComplete: () {
+                  setState(() {
+                    _isEditing = false;
                   });
+                  _updateControllerText();
+                },
+                onSubmitted: (_) {
+                  setState(() {
+                    _isEditing = false;
+                  });
+                  _updateControllerText();
                 },
               ),
             ),
@@ -276,5 +198,12 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _updateDebouncer?.cancel();
+    _controller.dispose();
+    super.dispose();
   }
 } 
