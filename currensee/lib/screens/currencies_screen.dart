@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:collection/collection.dart';
 import '../providers/currency_provider.dart';
 import '../providers/user_preferences_provider.dart';
 import '../widgets/currency_limit_dialog.dart';
 import '../widgets/currency_flag_placeholder.dart';
+import 'home_screen.dart';
 
 class CurrenciesScreen extends StatefulWidget {
-  const CurrenciesScreen({Key? key}) : super(key: key);
+  final bool isInitialSetup;
+  
+  const CurrenciesScreen({
+    Key? key,
+    this.isInitialSetup = false,
+  }) : super(key: key);
 
   @override
   State<CurrenciesScreen> createState() => _CurrenciesScreenState();
@@ -35,8 +42,15 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
   
   void _initSelectedCurrencies() {
     final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
-    _selectedCurrencies = List.from(userPrefs.selectedCurrencyCodes);
-    _baseCurrencyCode = userPrefs.baseCurrencyCode;
+    if (!widget.isInitialSetup) {
+      // Only load existing selections if not in initial setup
+      _selectedCurrencies = List.from(userPrefs.selectedCurrencyCodes);
+      _baseCurrencyCode = userPrefs.baseCurrencyCode;
+    } else {
+      // Start with empty selections in initial setup
+      _selectedCurrencies = [];
+      _baseCurrencyCode = '';
+    }
     
     print('Loaded currencies from preferences: Base=${_baseCurrencyCode}, Selected=${_selectedCurrencies.join(", ")}');
   }
@@ -80,12 +94,10 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
     
     if (_selectedCurrencies.contains(currencyCode)) {
       // Remove currency
-      _selectedCurrencies.remove(currencyCode);
-      // Save changes immediately
-      await userPrefs.setInitialCurrencies(
-        baseCurrency: _baseCurrencyCode,
-        selectedCurrencies: _selectedCurrencies.toList(),
-      );
+      setState(() {
+        _selectedCurrencies.remove(currencyCode);
+        _hasChanges = true;
+      });
     } else {
       // Add currency
       if (!userPrefs.isPremium && _selectedCurrencies.length >= 5) {
@@ -94,41 +106,28 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
         return;
       }
       
-      _selectedCurrencies.add(currencyCode);
-      // Save changes immediately
-      await userPrefs.setInitialCurrencies(
-        baseCurrency: _baseCurrencyCode,
-        selectedCurrencies: _selectedCurrencies.toList(),
-      );
+      setState(() {
+        _selectedCurrencies.add(currencyCode);
+        _hasChanges = true;
+      });
     }
-    
-    setState(() {});
   }
   
   // Method to set a currency as the base currency
-  void _setBaseCurrency(String currencyCode) async {
+  void _setBaseCurrency(String currencyCode) {
     // Make sure the currency is in the selected list
     if (!_selectedCurrencies.contains(currencyCode)) {
-      _selectedCurrencies.add(currencyCode);
+      setState(() {
+        _selectedCurrencies.add(currencyCode);
+        _baseCurrencyCode = currencyCode;
+        _hasChanges = true;
+      });
+    } else {
+      setState(() {
+        _baseCurrencyCode = currencyCode;
+        _hasChanges = true;
+      });
     }
-    
-    _baseCurrencyCode = currencyCode;
-    
-    // Save changes immediately
-    final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
-    final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-    
-    // Update storage
-    await userPrefs.setInitialCurrencies(
-      baseCurrency: _baseCurrencyCode,
-      selectedCurrencies: _selectedCurrencies.toList(),
-    );
-    
-    // Update currency provider
-    currencyProvider.setBaseCurrency(_baseCurrencyCode);
-    currencyProvider.selectCurrencies(_selectedCurrencies);
-    
-    setState(() {});
     
     // Show confirmation
     if (mounted) {
@@ -138,6 +137,60 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
           duration: const Duration(seconds: 1),
         ),
       );
+    }
+  }
+
+  Future<void> _saveChangesAndContinue() async {
+    if (_selectedCurrencies.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select at least one currency')),
+      );
+      return;
+    }
+
+    if (_baseCurrencyCode.isEmpty && _selectedCurrencies.isNotEmpty) {
+      // If no base currency is set, ask user to select one
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a base currency by tapping the star icon')),
+      );
+      return;
+    }
+
+    final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+    final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+
+    try {
+      // Save changes
+      await userPrefs.setInitialCurrencies(
+        baseCurrency: _baseCurrencyCode,
+        selectedCurrencies: _selectedCurrencies,
+      );
+      
+      // Update currency provider
+      await currencyProvider.reloadSelectedCurrencies(_selectedCurrencies);
+
+      // Mark setup as complete
+      if (widget.isInitialSetup) {
+        await userPrefs.completeInitialSetup();
+      }
+
+      if (mounted) {
+        if (widget.isInitialSetup) {
+          // Navigate to home screen and remove all previous routes
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+            (route) => false,
+          );
+        } else {
+          Navigator.of(context).pop();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save changes: $e')),
+        );
+      }
     }
   }
 
@@ -151,8 +204,8 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
     final filteredCurrencies = _searchQuery.isEmpty
         ? allCurrencies
         : allCurrencies.where((currency) =>
-            currency.code.toLowerCase().contains(_searchQuery) ||
-            currency.name.toLowerCase().contains(_searchQuery)).toList();
+            currency.code.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+            currency.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
     
     // Split currencies into selected and unselected
     final selectedCurrencies = filteredCurrencies
@@ -164,13 +217,19 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
 
     return WillPopScope(
       onWillPop: () async {
-        // Just return true to allow popping without showing save dialog
+        // If in initial setup, require at least one currency to be selected
+        if (widget.isInitialSetup) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please select currencies and tap Continue')),
+          );
+          return false;
+        }
         return true;
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Currencies'),
-          leading: IconButton(
+          title: Text(widget.isInitialSetup ? 'Select Currencies' : 'Currencies'),
+          leading: widget.isInitialSetup ? null : IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () {
               Navigator.of(context).pop();
@@ -179,6 +238,15 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
         ),
         body: Column(
           children: [
+            if (widget.isInitialSetup)
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Select the currencies you want to convert between. You can add more later.',
+                  style: Theme.of(context).textTheme.bodyLarge,
+                  textAlign: TextAlign.center,
+                ),
+              ),
             // Search field
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
@@ -237,6 +305,7 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       'Selected: ${_selectedCurrencies.length}',
@@ -245,13 +314,11 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
                         color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
-                    const SizedBox(width: 4),
                     if (!userPrefs.isPremium)
                       Text(
-                        '(max 5 for free users)',
+                        '${_selectedCurrencies.length}/5',
                         style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).textTheme.bodySmall?.color,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                   ],
@@ -263,80 +330,106 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
               child: ListView.builder(
                 itemCount: selectedCurrencies.length + unselectedCurrencies.length,
                 itemBuilder: (context, index) {
-                  final isSelected = index < selectedCurrencies.length;
-                  final currency = isSelected
-                      ? selectedCurrencies[index]
-                      : unselectedCurrencies[index - selectedCurrencies.length];
-                  
-                  return ListTile(
-                    leading: SizedBox(
-                      width: 36,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: Image.network(
-                          currency.flagUrl,
-                          width: 36,
-                          height: 24,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => CurrencyFlagPlaceholder(
-                            size: 36,
-                            currencyCode: currency.code,
-                          ),
-                        ),
-                      ),
-                    ),
-                    title: Text(
-                      currency.code,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    subtitle: Text(currency.name),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Star container with fixed width
-                        SizedBox(
-                          width: 40,
-                          child: currency.code == _baseCurrencyCode
-                            ? const Icon(
-                                Icons.star_rounded,
-                                color: Color(0xFF8FD584),
-                                size: 28,
-                              )
-                            : IconButton(
-                                icon: const Icon(
-                                  Icons.star_outline_rounded,
-                                  size: 28,
-                                ),
-                                padding: EdgeInsets.zero,
-                                onPressed: () => _setBaseCurrency(currency.code),
-                                tooltip: 'Set as base currency',
-                              ),
-                        ),
-                        // Checkbox with consistent spacing
-                        Transform.scale(
-                          scale: 1.2,
-                          child: Checkbox(
-                            value: isSelected,
-                            onChanged: (bool? value) {
-                              _toggleCurrency(currency.code);
-                            },
-                            activeColor: const Color(0xFF8FD584),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
+                  // Move base currency to top if it exists
+                  final baseIndex = selectedCurrencies.indexWhere((c) => c.code == _baseCurrencyCode);
+                  if (baseIndex != -1) {
+                    // Reorder the list to put base currency first
+                    final baseCurrency = selectedCurrencies.removeAt(baseIndex);
+                    selectedCurrencies.insert(0, baseCurrency);
+                  }
+
+                  // Show selected currencies first (with base currency at top)
+                  if (index < selectedCurrencies.length) {
+                    return _buildCurrencyTile(selectedCurrencies[index], true);
+                  }
+
+                  // Then show unselected currencies
+                  final unselectedIndex = index - selectedCurrencies.length;
+                  return _buildCurrencyTile(unselectedCurrencies[unselectedIndex], false);
                 },
               ),
             ),
           ],
         ),
+        bottomNavigationBar: widget.isInitialSetup || _hasChanges
+            ? SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: FilledButton(
+                    onPressed: _selectedCurrencies.isEmpty ? null : _saveChangesAndContinue,
+                    child: Text(widget.isInitialSetup ? 'Continue' : 'Save Changes'),
+                  ),
+                ),
+              )
+            : null,
       ),
+    );
+  }
+
+  Widget _buildCurrencyTile(dynamic currency, bool isSelected) {
+    return ListTile(
+      leading: SizedBox(
+        width: 36,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Image.network(
+            currency.flagUrl,
+            width: 36,
+            height: 24,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => CurrencyFlagPlaceholder(
+              size: 36,
+              currencyCode: currency.code,
+            ),
+          ),
+        ),
+      ),
+      title: Text(
+        currency.code,
+        style: TextStyle(
+          fontWeight: currency.code == _baseCurrencyCode ? FontWeight.w700 : FontWeight.w600,
+        ),
+      ),
+      subtitle: Text(currency.name),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Star container with fixed width
+          SizedBox(
+            width: 40,
+            child: currency.code == _baseCurrencyCode
+              ? const Icon(
+                  Icons.star_rounded,
+                  color: Color(0xFF8FD584),
+                  size: 28,
+                )
+              : IconButton(
+                  icon: const Icon(
+                    Icons.star_outline_rounded,
+                    size: 28,
+                  ),
+                  padding: EdgeInsets.zero,
+                  onPressed: () => _setBaseCurrency(currency.code),
+                  tooltip: 'Set as base currency',
+                ),
+          ),
+          // Checkbox with consistent spacing
+          Transform.scale(
+            scale: 1.2,
+            child: Checkbox(
+              value: isSelected,
+              onChanged: (bool? value) {
+                _toggleCurrency(currency.code);
+              },
+              activeColor: const Color(0xFF8FD584),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+        ],
+      ),
+      tileColor: currency.code == _baseCurrencyCode ? const Color(0xFF8FD584).withOpacity(0.1) : null,
     );
   }
 } 

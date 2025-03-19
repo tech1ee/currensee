@@ -9,8 +9,14 @@ class AdService {
   factory AdService() => _instance;
   AdService._internal();
 
+  static const String _testBannerAdUnitId = 'ca-app-pub-3940256099942544/6300978111';
+  static const String _testInterstitialAdUnitId = 'ca-app-pub-3940256099942544/1033173712';
+
   InterstitialAd? _interstitialAd;
   bool _isInterstitialAdReady = false;
+
+  String get testBannerAdUnitId => _testBannerAdUnitId;
+  String get testInterstitialAdUnitId => _testInterstitialAdUnitId;
 
   // Initialize the AdMob SDK
   Future<void> initialize() async {

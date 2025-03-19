@@ -22,7 +22,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   void initState() {
     super.initState();
     if (!widget.isPremium) {
-      _loadAd();
+      _loadBannerAd();
     }
   }
 
@@ -37,24 +37,30 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
     
     // If user downgraded from premium, load the ad
     if (!widget.isPremium && oldWidget.isPremium) {
-      _loadAd();
+      _loadBannerAd();
     }
   }
 
-  void _loadAd() {
+  void _loadBannerAd() {
     final adService = AdService();
-    
-    _bannerAd = adService.loadBannerAd()
-      ..load().then((_) {
-        setState(() {
-          _isAdLoaded = true;
-        });
-      }).catchError((error) {
-        debugPrint('Failed to load banner ad: $error');
-        setState(() {
-          _isAdLoaded = false;
-        });
-      });
+    _bannerAd = BannerAd(
+      adUnitId: adService.testBannerAdUnitId,
+      size: AdSize.mediumRectangle, // Bigger ad size (300x250)
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          setState(() {
+            _isAdLoaded = true;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          print('Ad failed to load: $error');
+          ad.dispose();
+        },
+      ),
+    );
+
+    _bannerAd?.load();
   }
 
   void _disposeAd() {
@@ -72,13 +78,14 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   @override
   Widget build(BuildContext context) {
     if (widget.isPremium || !_isAdLoaded || _bannerAd == null) {
-      return const SizedBox.shrink(); // No space taken if premium or ad not loaded
+      return const SizedBox.shrink();
     }
-    
+
     return Container(
-      alignment: Alignment.center,
       width: _bannerAd!.size.width.toDouble(),
       height: _bannerAd!.size.height.toDouble(),
+      alignment: Alignment.center,
+      margin: const EdgeInsets.symmetric(vertical: 8),
       child: AdWidget(ad: _bannerAd!),
     );
   }

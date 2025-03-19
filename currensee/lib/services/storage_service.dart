@@ -14,6 +14,7 @@ class StorageService {
     print('   themeMode: ${preferences.themeMode}');
     print('   baseCurrency: ${preferences.baseCurrencyCode}');
     print('   lastRatesRefresh: ${preferences.lastRatesRefresh}');
+    print('   hasCompletedInitialSetup: ${preferences.hasCompletedInitialSetup}');
     
     final prefs = await SharedPreferences.getInstance();
     
@@ -41,10 +42,10 @@ class StorageService {
       preferences.isPremium,
     );
     
-    // Save onboarding status
+    // Save initial setup status
     await prefs.setBool(
       AppConstants.prefsKeyOnboardingCompleted,
-      preferences.hasCompletedOnboarding,
+      preferences.hasCompletedInitialSetup,
     );
     
     // Save last rates refresh date
@@ -71,13 +72,14 @@ class StorageService {
     
     final themeModeString = prefs.getString(AppConstants.prefsKeyThemeMode);
     final selectedCurrencyCodes = prefs.getStringList(AppConstants.prefsKeySelectedCurrencies) ?? [];
-    final baseCurrencyCode = prefs.getString(AppConstants.prefsKeyBaseCurrency) ?? 'USD';
+    final baseCurrencyCode = prefs.getString(AppConstants.prefsKeyBaseCurrency) ?? '';
     final isPremium = prefs.getBool(AppConstants.prefsKeyIsPremium) ?? false;
-    final hasCompletedOnboarding = prefs.getBool(AppConstants.prefsKeyOnboardingCompleted) ?? false;
+    final hasCompletedInitialSetup = prefs.getBool(AppConstants.prefsKeyOnboardingCompleted) ?? false;
     
     print('   isPremium loaded: $isPremium');
     print('   baseCurrency loaded: $baseCurrencyCode');
     print('   themeMode loaded: $themeModeString');
+    print('   hasCompletedInitialSetup loaded: $hasCompletedInitialSetup');
     
     // Load last rates refresh date
     DateTime? lastRatesRefresh;
@@ -100,8 +102,8 @@ class StorageService {
       selectedCurrencyCodes: selectedCurrencyCodes,
       baseCurrencyCode: baseCurrencyCode,
       isPremium: isPremium,
-      hasCompletedOnboarding: hasCompletedOnboarding,
       lastRatesRefresh: lastRatesRefresh,
+      hasCompletedInitialSetup: hasCompletedInitialSetup,
     );
     
     print('💾 STORAGE: User preferences loaded successfully');

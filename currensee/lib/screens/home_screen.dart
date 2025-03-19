@@ -492,34 +492,68 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             SafeArea(
               child: Column(
                 children: [
-                  if (isOffline)
-                    Container(
-                      color: isDark 
-                          ? Colors.amber.shade900.withOpacity(0.15)
-                          : Colors.amber.shade50,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.wifi_off_rounded,
-                            size: 20,
-                            color: isDark ? Colors.amber.shade500 : Colors.amber.shade900,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Using offline data. Last updated: ${currencyProvider.exchangeRates?.timestamp.toString() ?? 'Unknown'}',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: isDark ? Colors.amber.shade500 : Colors.amber.shade900,
-                                height: 1.2,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                          ),
-                        ],
+                  // Table header
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.background,
+                      border: Border(
+                        bottom: BorderSide(
+                          color: Theme.of(context).dividerColor.withOpacity(0.1),
+                          width: 1,
+                        ),
                       ),
                     ),
+                    child: Row(
+                      children: [
+                        // Flag column
+                        const SizedBox(width: 36),
+                        const SizedBox(width: 16),
+                        // Currency code column
+                        SizedBox(
+                          width: 60,
+                          child: Text(
+                            'Code',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                        // Currency name column
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            'Currency',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                        // Value column
+                        SizedBox(
+                          width: 120,
+                          child: Text(
+                            'Value',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Currency list with "Add Currency" button
                   Expanded(
                     child: currencyProvider.selectedCurrencies.isEmpty
                       ? Center(
@@ -580,66 +614,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         )
                       : Column(
                           children: [
-                            // Table header
-                            Container(
-                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.background,
-                                border: Border(
-                                  bottom: BorderSide(
-                                    color: Theme.of(context).dividerColor.withOpacity(0.1),
-                                    width: 1,
-                                  ),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  // Flag column
-                                  const SizedBox(width: 36),
-                                  const SizedBox(width: 16),
-                                  // Currency code column
-                                  SizedBox(
-                                    width: 60,
-                                    child: Text(
-                                      'Code',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
-                                        letterSpacing: -0.2,
-                                      ),
-                                    ),
-                                  ),
-                                  // Currency name column
-                                  Expanded(
-                                    flex: 2,
-                                    child: Text(
-                                      'Currency',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
-                                        letterSpacing: -0.2,
-                                      ),
-                                    ),
-                                  ),
-                                  // Value column
-                                  SizedBox(
-                                    width: 120,
-                                    child: Text(
-                                      'Value',
-                                      textAlign: TextAlign.right,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
-                                        letterSpacing: -0.2,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
                             Expanded(
                               child: ReorderableListView.builder(
                                 itemCount: currencyProvider.selectedCurrencies.length + 1,
@@ -661,36 +635,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   );
                                 },
                                 onReorder: (oldIndex, newIndex) {
-                                  // Don't allow reordering if either index is the add button
-                                  if (oldIndex == currencyProvider.selectedCurrencies.length || 
-                                      newIndex == currencyProvider.selectedCurrencies.length) {
+                                  // Don't allow reordering the "Add Currency" button
+                                  if (oldIndex >= currencyProvider.selectedCurrencies.length ||
+                                      newIndex > currencyProvider.selectedCurrencies.length) {
                                     return;
                                   }
-                                  
-                                  // Get the base currency index
-                                  final baseCurrencyIndex = currencyProvider.selectedCurrencies
-                                      .indexWhere((c) => c.code == userPrefs.baseCurrencyCode);
-                                  
-                                  // Skip reordering if trying to move base currency
-                                  if (oldIndex == baseCurrencyIndex) return;
-                                  
-                                  // Adjust indices for ReorderableListView behavior
-                                  if (oldIndex < newIndex) {
+
+                                  // Adjust indices
+                                  if (newIndex > oldIndex) {
                                     newIndex -= 1;
                                   }
+
+                                  // Get current order
+                                  final currencies = currencyProvider.selectedCurrencies;
                                   
-                                  // Skip if trying to move an item before the base currency
-                                  if (newIndex < baseCurrencyIndex && baseCurrencyIndex > 0) {
-                                    newIndex = baseCurrencyIndex;
+                                  // Don't allow moving the base currency
+                                  if (currencies[oldIndex].code == userPrefs.baseCurrencyCode) {
+                                    return;
                                   }
-                                  
-                                  // Process the reordering
-                                  final currencies = List<Currency>.from(currencyProvider.selectedCurrencies);
-                                  final currency = currencies.removeAt(oldIndex);
-                                  currencies.insert(newIndex, currency);
-                                  
-                                  // Update user preferences with new order
-                                  final newOrder = currencies.map((c) => c.code).toList();
+
+                                  // Create new order
+                                  final List<String> newOrder = currencies.map((c) => c.code).toList();
+                                  final item = newOrder.removeAt(oldIndex);
+                                  newOrder.insert(newIndex, item);
+
+                                  // Update order in preferences and provider
                                   userPrefs.setInitialCurrencies(
                                     baseCurrency: userPrefs.baseCurrencyCode,
                                     selectedCurrencies: newOrder,
@@ -738,8 +707,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       ),
                                     );
                                   }
+
+                                  // Get the sorted currencies with base currency at the top
+                                  final currencies = List.of(currencyProvider.selectedCurrencies);
+                                  final baseIndex = currencies.indexWhere((c) => c.code == userPrefs.baseCurrencyCode);
+                                  if (baseIndex > 0) {
+                                    final baseCurrency = currencies.removeAt(baseIndex);
+                                    currencies.insert(0, baseCurrency);
+                                  }
                                   
-                                  final currency = currencyProvider.selectedCurrencies[index];
+                                  final currency = currencies[index];
                                   final isBaseCurrency = currency.code == userPrefs.baseCurrencyCode;
                                   
                                   return ReorderableDragStartListener(
@@ -749,7 +726,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     child: CurrencyListItem(
                                       currency: currency,
                                       onValueChanged: (code, value) => currencyProvider.updateCurrencyValue(code, value),
-                                      isBaseCurrency: currency.code == userPrefs.baseCurrencyCode,
+                                      isBaseCurrency: isBaseCurrency,
                                       isEditing: currencyProvider.currentlyEditedCurrencyCode == currency.code,
                                       onEditStart: () => currencyProvider.setCurrentlyEditedCurrencyCode(currency.code),
                                       onEditEnd: () => currencyProvider.clearCurrentlyEditedCurrencyCode(),
@@ -762,10 +739,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ],
                         ),
                   ),
-                  // Banner ad at the bottom for free users
-                  AdBannerWidget(isPremium: userPrefs.isPremium),
                 ],
               ),
+            ),
+            // Banner ad at the bottom for free users
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+              child: AdBannerWidget(isPremium: userPrefs.isPremium),
             ),
           ],
         ),

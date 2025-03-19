@@ -56,14 +56,11 @@ class CurrencyProvider with ChangeNotifier {
     // Load user preferences
     _userPreferences = await _storageService.loadUserPreferences();
     
-    // Load previously saved currency values
-    final savedValues = await _storageService.loadCurrencyValues();
-    
     // Try to load cached exchange rates
     final cachedRates = await _storageService.loadExchangeRates();
     if (cachedRates != null) {
       _exchangeRates = cachedRates;
-      _isOffline = true; // Assume we're offline if using cached rates
+      _isOffline = true;
     }
     
     // Make sure we have the base currency in selected currencies
@@ -73,35 +70,17 @@ class CurrencyProvider with ChangeNotifier {
     
     // Ensure we have at least some currencies selected
     if (selectedCurrencyCodes.isEmpty) {
-      selectedCurrencyCodes = [baseCurrencyCode, 'EUR', 'GBP'];
+      selectedCurrencyCodes = [baseCurrencyCode];
     }
     
     // Load all available currencies
     await loadAllCurrencies();
     
     // Select currencies based on the provided codes
-    selectCurrencies(selectedCurrencyCodes);
+    await selectCurrencies(selectedCurrencyCodes);
     
-    // Apply saved values to selected currencies
-    if (savedValues.isNotEmpty) {
-      for (var i = 0; i < _selectedCurrencies.length; i++) {
-        final currency = _selectedCurrencies[i];
-        if (savedValues.containsKey(currency.code)) {
-          _selectedCurrencies[i].value = savedValues[currency.code] ?? 1.0;
-        }
-      }
-    }
-    
-    // If base currency has no value, set it to 1.0
-    final baseIndex = _selectedCurrencies.indexWhere((c) => c.code == _baseCurrencyCode);
-    if (baseIndex != -1 && _selectedCurrencies[baseIndex].value == 0) {
-      _selectedCurrencies[baseIndex].value = 1.0;
-    }
-    
-    // Fetch latest exchange rates if we don't have cached data
-    if (_exchangeRates == null) {
-      await fetchExchangeRates();
-    }
+    // Always set base currency value to 1.0 and recalculate others
+    _recalculateValuesFromCurrency(_baseCurrencyCode, 1.0);
     
     // Make sure to notify listeners after everything is loaded
     notifyListeners();
@@ -109,8 +88,27 @@ class CurrencyProvider with ChangeNotifier {
 
   // Force a reload of selected currencies from user preferences
   Future<void> reloadSelectedCurrencies(List<String> currencyCodes) async {
-    selectCurrencies(currencyCodes);
-    await fetchExchangeRates();
+    print('🔄 Reloading selected currencies: ${currencyCodes.join(", ")}');
+    
+    // Get base currency code
+    final baseCurrencyCode = userPreferences?.baseCurrencyCode ?? '';
+    
+    // Sort currency codes to ensure base currency is first
+    final sortedCodes = List<String>.from(currencyCodes);
+    if (baseCurrencyCode.isNotEmpty) {
+      sortedCodes.remove(baseCurrencyCode);
+      sortedCodes.insert(0, baseCurrencyCode);
+    }
+    
+    // Load currencies in the sorted order
+    _selectedCurrencies = sortedCodes
+        .map((code) => _allCurrencies.firstWhere((c) => c.code == code))
+        .toList();
+    
+    // Set initial values based on base currency
+    _recalculateValuesFromCurrency(baseCurrencyCode, 1.0);
+    
+    notifyListeners();
   }
 
   // Load all available currencies
@@ -233,52 +231,31 @@ class CurrencyProvider with ChangeNotifier {
   }
 
   // Select currencies based on the provided codes
-  void selectCurrencies(List<String> currencyCodes) {
-    // Make sure we have at least one currency
-    if (currencyCodes.isEmpty) {
-      currencyCodes = [_baseCurrencyCode];
+  Future<void> selectCurrencies(List<String> currencyCodes) async {
+    print('🔄 Selecting currencies: ${currencyCodes.join(", ")}');
+    
+    // Get base currency code
+    final baseCurrencyCode = userPreferences?.baseCurrencyCode ?? '';
+    
+    // Sort currency codes to ensure base currency is first
+    final sortedCodes = List<String>.from(currencyCodes);
+    if (baseCurrencyCode.isNotEmpty) {
+      sortedCodes.remove(baseCurrencyCode);
+      sortedCodes.insert(0, baseCurrencyCode);
     }
     
-    // Make sure we have the base currency
-    if (!currencyCodes.contains(_baseCurrencyCode)) {
-      currencyCodes = [...currencyCodes, _baseCurrencyCode];
-    }
-    
-    // Move base currency to the front of the list
-    currencyCodes = [
-      _baseCurrencyCode,
-      ...currencyCodes.where((code) => code != _baseCurrencyCode),
-    ];
-    
-    // Find currency objects for the provided codes
-    _selectedCurrencies = _allCurrencies
-        .where((currency) => currencyCodes.contains(currency.code))
+    // Update selected currencies in the sorted order
+    _selectedCurrencies = sortedCodes
+        .map((code) => _allCurrencies.firstWhere((c) => c.code == code))
         .toList();
     
-    // Sort currencies to match the order in currencyCodes
-    _selectedCurrencies.sort((a, b) {
-      final indexA = currencyCodes.indexOf(a.code);
-      final indexB = currencyCodes.indexOf(b.code);
-      return indexA.compareTo(indexB);
-    });
-    
-    // If we couldn't find all currencies, create placeholders
-    final foundCodes = _selectedCurrencies.map((c) => c.code).toList();
-    for (final code in currencyCodes) {
-      if (!foundCodes.contains(code)) {
-        _selectedCurrencies.add(Currency(
-          code: code,
-          name: code,
-          symbol: '',
-          flagUrl: 'https://flagsapi.com/${code.substring(0, 2)}/flat/64.png',
-        ));
-      }
-    }
-    
-    // Make sure to update all currency values
-    _updateCurrencyValues();
+    // Set initial values based on base currency
+    _recalculateValuesFromCurrency(baseCurrencyCode, 1.0);
     
     notifyListeners();
+    
+    // Fetch latest rates for selected currencies
+    await fetchExchangeRates();
   }
 
   // Methods to track which currency is currently being edited
@@ -390,120 +367,57 @@ class CurrencyProvider with ChangeNotifier {
     
     print('💱 Initializing all currencies with base currency');
     
-    // Find the base currency in our list
-    int baseIndex = _selectedCurrencies.indexWhere((c) => c.code == _baseCurrencyCode);
-    
-    // If the base currency is found, ensure it has a value of 1.0
-    if (baseIndex != -1) {
-      // Set base currency value to 1.0 if it's 0.0
-      if (_selectedCurrencies[baseIndex].value == 0) {
-        _selectedCurrencies[baseIndex].value = 1.0;
-      }
-      
-      // Use the current base currency value to recalculate all others
-      _recalculateValuesFromCurrency(_baseCurrencyCode, _selectedCurrencies[baseIndex].value);
-    } else {
-      // Base currency not in the list, create it
-      final baseCurrency = Currency(
-        code: _baseCurrencyCode,
-        name: _baseCurrencyCode,
-        symbol: '',
-        value: 1.0,  // Always set the base value to 1.0 when creating it new
-        flagUrl: 'https://flagsapi.com/${_baseCurrencyCode.substring(0, 2)}/flat/64.png',
-      );
-      
-      // Add it to the list
-      _selectedCurrencies.insert(0, baseCurrency);
-      
-      // Recalculate based on this new currency with value 1.0
-      _recalculateValuesFromCurrency(_baseCurrencyCode, 1.0);
-    }
+    // Always set base currency value to 1.0 and recalculate others
+    _recalculateValuesFromCurrency(_baseCurrencyCode, 1.0);
   }
   
   // PRIVATE: COMPREHENSIVE recalculation based on a changed currency
-  Future<void> _recalculateValuesFromCurrency(String sourceCode, double sourceValue) async {
+  void _recalculateValuesFromCurrency(String sourceCurrencyCode, double sourceValue) {
     if (_exchangeRates == null) return;
     
-    print('\n🧮🧮🧮 RECALCULATING all values from $sourceCode = $sourceValue 🧮🧮');
+    print('\n🧮 Recalculating values from $sourceCurrencyCode = $sourceValue');
     
     // Create a new list to store updated currencies
-    List<Currency> updatedCurrencies = List.from(_selectedCurrencies);
+    final updatedCurrencies = <Currency>[];
     
-    // Find the source currency index
-    final sourceIndex = updatedCurrencies.indexWhere((c) => c.code == sourceCode);
-    if (sourceIndex == -1) {
-      print('   ❌ Source currency not found: $sourceCode');
-      return;
-    }
+    // For base currency calculations, we need USD rates since our API returns USD-based rates
+    final usdRate = _exchangeRates!.rates[sourceCurrencyCode] ?? 1.0;
     
-    // Update the source currency's value
-    updatedCurrencies[sourceIndex] = Currency(
-      code: updatedCurrencies[sourceIndex].code,
-      name: updatedCurrencies[sourceIndex].name,
-      symbol: updatedCurrencies[sourceIndex].symbol,
-      flagUrl: updatedCurrencies[sourceIndex].flagUrl,
-      value: sourceValue
-    );
-    
-    // Loop through all currencies and update their values
-    for (var i = 0; i < updatedCurrencies.length; i++) {
-      if (i == sourceIndex) continue; // Skip the source currency
+    for (final currency in _selectedCurrencies) {
+      double newValue;
       
-      final targetCurrency = updatedCurrencies[i];
-      try {
-        final oldValue = targetCurrency.value;
+      if (currency.code == sourceCurrencyCode) {
+        // Source currency gets the input value
+        newValue = sourceValue;
+      } else {
+        // Get the target currency's USD rate
+        final targetUsdRate = _exchangeRates!.rates[currency.code] ?? 1.0;
         
-        // Calculate the new value based on exchange rates
-        final newValue = _exchangeRates!.convert(
-          sourceValue,
-          sourceCode,
-          targetCurrency.code,
-        );
+        // Calculate: sourceValue * (targetUsdRate / sourceUsdRate)
+        // This gives us the correct cross rate from source to target
+        newValue = sourceValue * (targetUsdRate / usdRate);
         
-        // Round to 2 decimal places to avoid floating point issues
-        final roundedValue = double.parse(newValue.toStringAsFixed(2));
-        
-        print('   ✅ Updated ${targetCurrency.code}: $oldValue → $roundedValue');
-        updatedCurrencies[i] = Currency(
-          code: targetCurrency.code,
-          name: targetCurrency.name,
-          symbol: targetCurrency.symbol,
-          flagUrl: targetCurrency.flagUrl,
-          value: roundedValue
-        );
-      } catch (e) {
-        print('   ❌ Error calculating value for ${targetCurrency.code}: $e');
-        
-        // Use a fallback conversion
-        double fallbackValue;
-        if (targetCurrency.code == _baseCurrencyCode) {
-          fallbackValue = sourceValue; // If base currency, assume 1:1
-        } else if (sourceCode == _baseCurrencyCode) {
-          fallbackValue = sourceValue; // If converting from base, assume 1:1
-        } else {
-          fallbackValue = sourceValue; // Default fallback
-        }
-        
-        updatedCurrencies[i] = Currency(
-          code: targetCurrency.code,
-          name: targetCurrency.name,
-          symbol: targetCurrency.symbol,
-          flagUrl: targetCurrency.flagUrl,
-          value: fallbackValue
-        );
+        // Round to 2 decimal places
+        newValue = double.parse(newValue.toStringAsFixed(2));
       }
+      
+      print('   ${currency.code}: $newValue');
+      
+      updatedCurrencies.add(Currency(
+        code: currency.code,
+        name: currency.name,
+        symbol: currency.symbol,
+        flagUrl: currency.flagUrl,
+        value: newValue
+      ));
     }
     
-    // Replace the currencies list with the updated one
+    // Update the list and save
     _selectedCurrencies = updatedCurrencies;
+    _storageService.saveCurrencyValues(_selectedCurrencies);
     
-    // Save the updated currency values
-    await _storageService.saveCurrencyValues(_selectedCurrencies);
-    
-    // Notify listeners of the update
     notifyListeners();
-    
-    print('🧮🧮🧮 RECALCULATION COMPLETE 🧮🧮🧮\n');
+    print('🧮 Recalculation complete\n');
   }
 
   // Set base currency

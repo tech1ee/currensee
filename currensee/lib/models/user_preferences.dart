@@ -5,33 +5,33 @@ class UserPreferences {
   final bool isPremium;
   final List<String> selectedCurrencyCodes;
   final String baseCurrencyCode;
-  final bool hasCompletedOnboarding;
   final DateTime? lastRatesRefresh;
+  final bool hasCompletedInitialSetup;
 
   UserPreferences({
     this.themeMode = ThemeMode.system,
     this.isPremium = false,
     List<String>? selectedCurrencyCodes,
-    this.baseCurrencyCode = 'USD',
-    this.hasCompletedOnboarding = false,
+    this.baseCurrencyCode = '',
     this.lastRatesRefresh,
-  }) : selectedCurrencyCodes = selectedCurrencyCodes ?? ['USD', 'EUR', 'GBP'];
+    this.hasCompletedInitialSetup = false,
+  }) : selectedCurrencyCodes = selectedCurrencyCodes ?? [];
 
   UserPreferences copyWith({
     ThemeMode? themeMode,
     bool? isPremium,
     List<String>? selectedCurrencyCodes,
     String? baseCurrencyCode,
-    bool? hasCompletedOnboarding,
     DateTime? lastRatesRefresh,
+    bool? hasCompletedInitialSetup,
   }) {
     return UserPreferences(
       themeMode: themeMode ?? this.themeMode,
       isPremium: isPremium ?? this.isPremium,
       selectedCurrencyCodes: selectedCurrencyCodes ?? this.selectedCurrencyCodes,
       baseCurrencyCode: baseCurrencyCode ?? this.baseCurrencyCode,
-      hasCompletedOnboarding: hasCompletedOnboarding ?? this.hasCompletedOnboarding,
       lastRatesRefresh: lastRatesRefresh ?? this.lastRatesRefresh,
+      hasCompletedInitialSetup: hasCompletedInitialSetup ?? this.hasCompletedInitialSetup,
     );
   }
 
@@ -83,9 +83,6 @@ class UserPreferences {
     }
     
     final baseCurrency = json['baseCurrencyCode'] ?? 'USD';
-    if (currencies.isEmpty || !currencies.contains(baseCurrency)) {
-      currencies = [baseCurrency, 'EUR', 'GBP'];
-    }
     
     DateTime? lastRefresh;
     if (json['lastRatesRefresh'] != null) {
@@ -104,8 +101,8 @@ class UserPreferences {
       isPremium: json['isPremium'] ?? false,
       selectedCurrencyCodes: currencies,
       baseCurrencyCode: baseCurrency,
-      hasCompletedOnboarding: json['hasCompletedOnboarding'] ?? false,
       lastRatesRefresh: lastRefresh,
+      hasCompletedInitialSetup: json['hasCompletedInitialSetup'] ?? false,
     );
   }
 
@@ -115,8 +112,8 @@ class UserPreferences {
       'isPremium': isPremium,
       'selectedCurrencyCodes': selectedCurrencyCodes,
       'baseCurrencyCode': baseCurrencyCode,
-      'hasCompletedOnboarding': hasCompletedOnboarding,
       'lastRatesRefresh': lastRatesRefresh?.millisecondsSinceEpoch,
+      'hasCompletedInitialSetup': hasCompletedInitialSetup,
     };
   }
 } 

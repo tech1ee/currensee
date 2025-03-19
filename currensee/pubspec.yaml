@@ -48,7 +48,7 @@ dependencies:
   google_mobile_ads: ^5.3.1
   
   # For formatted text
-  intl: ^0.20.2
+  intl: ^0.18.1
 
 dev_dependencies:
   flutter_test:

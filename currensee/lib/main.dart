@@ -5,7 +5,7 @@ import 'constants/theme_constants.dart';
 import 'providers/currency_provider.dart';
 import 'providers/user_preferences_provider.dart';
 import 'screens/home_screen.dart';
-import 'screens/onboarding_screen.dart';
+import 'screens/currencies_screen.dart';
 import 'services/ad_service.dart';
 import 'services/purchase_service.dart';
 import 'services/storage_service.dart';
@@ -45,6 +45,7 @@ class _MyAppState extends State<MyApp> {
   final CurrencyProvider _currencyProvider = CurrencyProvider();
   final PurchaseService _purchaseService = PurchaseService();
   bool _initialized = false;
+  String? _initError;
 
   @override
   void initState() {
@@ -56,32 +57,42 @@ class _MyAppState extends State<MyApp> {
   Future<void> _initializeProviders() async {
     print('🔄 Starting provider initialization');
     
-    // Wait for user preferences to load
-    print('⏳ Waiting for user preferences to load...');
-    while (_userPrefs.isLoading) {
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
-    print('✅ User preferences loaded:');
-    print('   Base currency: ${_userPrefs.baseCurrencyCode}');
-    print('   Selected currencies: ${_userPrefs.selectedCurrencyCodes.join(', ')}');
-    print('   Theme: ${_userPrefs.themeMode.toString()}');
-    
-    // Initialize purchase service
-    await _purchaseService.initialize();
-    
-    // Now initialize currency provider with user preferences
-    print('⏳ Initializing currency provider...');
-    await _currencyProvider.initialize(
-      _userPrefs.selectedCurrencyCodes,
-      _userPrefs.baseCurrencyCode,
-    );
-    print('✅ Currency provider initialized');
-    
-    if (mounted) {
-      setState(() {
-        _initialized = true;
-        print('🚀 App initialization complete, rendering main UI');
-      });
+    try {
+      // Wait for user preferences to load
+      print('⏳ Waiting for user preferences to load...');
+      while (_userPrefs.isLoading) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+      print('✅ User preferences loaded:');
+      print('   Base currency: ${_userPrefs.baseCurrencyCode}');
+      print('   Selected currencies: ${_userPrefs.selectedCurrencyCodes.join(', ')}');
+      print('   Theme: ${_userPrefs.themeMode.toString()}');
+      
+      // Initialize purchase service
+      await _purchaseService.initialize();
+      
+      // Now initialize currency provider with user preferences
+      print('⏳ Initializing currency provider...');
+      await _currencyProvider.initialize(
+        _userPrefs.selectedCurrencyCodes,
+        _userPrefs.baseCurrencyCode,
+      );
+      print('✅ Currency provider initialized');
+      
+      if (mounted) {
+        setState(() {
+          _initialized = true;
+          _initError = null;
+          print('🚀 App initialization complete, rendering main UI');
+        });
+      }
+    } catch (e) {
+      print('❌ Error during initialization: $e');
+      if (mounted) {
+        setState(() {
+          _initError = e.toString();
+        });
+      }
     }
   }
 
@@ -101,28 +112,75 @@ class _MyAppState extends State<MyApp> {
             theme: ThemeConstants.lightTheme,
             darkTheme: ThemeConstants.darkTheme,
             themeMode: userPrefs.themeMode,
-            home: _initialized 
-                ? (userPrefs.hasCompletedOnboarding 
-                    ? const HomeScreen() 
-                    : const OnboardingScreen())
-                : Scaffold(
+            home: _initError != null
+                ? Scaffold(
                     body: Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const CircularProgressIndicator(),
-                          const SizedBox(height: 20),
+                          const Icon(
+                            Icons.error_outline,
+                            color: Colors.red,
+                            size: 48,
+                          ),
+                          const SizedBox(height: 16),
                           Text(
-                            'Loading currencies...',
+                            'Failed to initialize app',
                             style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey[600],
+                              fontSize: 18,
+                              color: Colors.grey[800],
+                              fontWeight: FontWeight.bold,
                             ),
+                          ),
+                          const SizedBox(height: 8),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Text(
+                              _initError!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                _initError = null;
+                                _initialized = false;
+                              });
+                              _initializeProviders();
+                            },
+                            child: const Text('Retry'),
                           ),
                         ],
                       ),
                     ),
-                  ),
+                  )
+                : !_initialized
+                    ? Scaffold(
+                        body: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const CircularProgressIndicator(),
+                              const SizedBox(height: 20),
+                              Text(
+                                'Loading currencies...',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : (!userPrefs.hasCompletedInitialSetup
+                        ? const CurrenciesScreen(isInitialSetup: true)
+                        : const HomeScreen()),
             debugShowCheckedModeBanner: false,
           );
         },

@@ -3,41 +3,71 @@ import '../models/user_preferences.dart';
 import '../services/storage_service.dart';
 
 class UserPreferencesProvider with ChangeNotifier {
-  UserPreferences _preferences = UserPreferences();
   final StorageService _storageService = StorageService();
   bool _isLoading = true;
+  String? _error;
+  late UserPreferences _preferences;
 
   UserPreferencesProvider() {
     _loadPreferences();
   }
 
-  UserPreferences get preferences => _preferences;
+  // Getters
   bool get isLoading => _isLoading;
-  ThemeMode get themeMode => _preferences.themeMode;
+  String? get error => _error;
   bool get isPremium => _preferences.isPremium;
+  ThemeMode get themeMode => _preferences.themeMode;
   List<String> get selectedCurrencyCodes => _preferences.selectedCurrencyCodes;
   String get baseCurrencyCode => _preferences.baseCurrencyCode;
-  bool get hasCompletedOnboarding => _preferences.hasCompletedOnboarding;
+  DateTime? get lastRatesRefresh => _preferences.lastRatesRefresh;
+  bool get hasCompletedInitialSetup => _preferences.hasCompletedInitialSetup;
 
   // Load preferences from storage
   Future<void> _loadPreferences() async {
     _isLoading = true;
+    _error = null;
     notifyListeners();
-    
-    _preferences = await _storageService.loadUserPreferences();
-    
-    // Ensure we have at least some default currencies
-    if (_preferences.selectedCurrencyCodes.isEmpty) {
-      _preferences = _preferences.copyWith(
-        selectedCurrencyCodes: ['USD', 'EUR', 'GBP']
-      );
-      
-      // Save these default currencies
-      await _storageService.saveUserPreferences(_preferences);
+
+    try {
+      _preferences = await _storageService.loadUserPreferences();
+    } catch (e) {
+      print('❌ Error loading preferences: $e');
+      _error = e.toString();
+      // Initialize with default preferences on error
+      _preferences = UserPreferences();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-    
-    _isLoading = false;
-    notifyListeners();
+  }
+
+  // Save preferences to storage
+  Future<void> _savePreferences() async {
+    try {
+      await _storageService.saveUserPreferences(_preferences);
+      notifyListeners();
+    } catch (e) {
+      print('❌ Error saving preferences: $e');
+      throw e;
+    }
+  }
+
+  // Complete initial setup
+  Future<void> completeInitialSetup() async {
+    _preferences = _preferences.copyWith(hasCompletedInitialSetup: true);
+    await _savePreferences();
+  }
+
+  // Set initial currencies
+  Future<void> setInitialCurrencies({
+    required String baseCurrency,
+    required List<String> selectedCurrencies,
+  }) async {
+    _preferences = _preferences.copyWith(
+      baseCurrencyCode: baseCurrency,
+      selectedCurrencyCodes: selectedCurrencies,
+    );
+    await _savePreferences();
   }
 
   // Set theme mode
@@ -144,32 +174,6 @@ class UserPreferencesProvider with ChangeNotifier {
     notifyListeners();
   }
   
-  // Mark onboarding as complete
-  Future<void> completeOnboarding() async {
-    if (_preferences.hasCompletedOnboarding) return;
-    
-    _preferences = _preferences.copyWith(hasCompletedOnboarding: true);
-    await _storageService.saveUserPreferences(_preferences);
-    notifyListeners();
-  }
-  
-  // Set initial currencies during onboarding
-  Future<void> setInitialCurrencies({required String baseCurrency, required List<String> selectedCurrencies}) async {
-    // Ensure base currency is in the selected currencies list
-    final List<String> updatedCurrencies = List<String>.from(selectedCurrencies);
-    if (!updatedCurrencies.contains(baseCurrency)) {
-      updatedCurrencies.add(baseCurrency);
-    }
-    
-    _preferences = _preferences.copyWith(
-      baseCurrencyCode: baseCurrency,
-      selectedCurrencyCodes: updatedCurrencies,
-    );
-    
-    await _storageService.saveUserPreferences(_preferences);
-    notifyListeners();
-  }
-
   // Force reload preferences from storage
   Future<void> reloadPreferences() async {
     print('\n🔄 USER PREFS: Force reloading preferences from storage');
