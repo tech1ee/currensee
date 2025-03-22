@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import '../constants/app_constants.dart';
 import '../models/currency.dart';
@@ -118,33 +119,72 @@ class ApiService {
 
   // Fetch latest exchange rates
   Future<ExchangeRates> fetchExchangeRates(String baseCurrency) async {
+    print('🌐 API: Fetching exchange rates for base currency: $baseCurrency');
+    
     if (_useMockData) {
+      print('🔄 Using mock data (useMockData=true)');
       return _getMockExchangeRates(baseCurrency);
     }
     
     try {
+      // Normalize the base currency code
+      final normalizedBase = baseCurrency.toLowerCase();
+      print('🔄 Normalized base currency: $normalizedBase');
+      
       // First try the primary URL
+      final primaryUrl = '${baseUrl}currencies/$normalizedBase.json';
+      print('🔄 Trying primary URL: $primaryUrl');
+      
       final response = await http.get(
-        Uri.parse('${baseUrl}currencies/${baseCurrency.toLowerCase()}.json'),
-      ).timeout(const Duration(seconds: 10));
+        Uri.parse(primaryUrl),
+      ).timeout(const Duration(seconds: 15)); // Increased timeout
 
       if (response.statusCode == 200) {
-        return _parseRatesResponse(response.body, baseCurrency);
+        print('✅ Primary URL success (status: ${response.statusCode})');
+        try {
+          final result = _parseRatesResponse(response.body, baseCurrency);
+          print('✅ Parsed rates successfully: ${result.rates.length} currencies');
+          return result;
+        } catch (parseError) {
+          print('⚠️ Error parsing primary response: $parseError');
+          print('⚠️ Response body: ${response.body.substring(0, math.min(100, response.body.length))}...');
+          // Continue to fallback URL
+        }
+      } else {
+        print('⚠️ Primary URL failed with status: ${response.statusCode}');
       }
       
       // If primary URL fails, try the fallback
+      final fallbackUrl = '${this.fallbackUrl}currencies/$normalizedBase.json';
+      print('🔄 Trying fallback URL: $fallbackUrl');
+      
       final fallbackResponse = await http.get(
-        Uri.parse('${fallbackUrl}currencies/${baseCurrency.toLowerCase()}.json'),
-      ).timeout(const Duration(seconds: 10));
+        Uri.parse(fallbackUrl),
+      ).timeout(const Duration(seconds: 15)); // Increased timeout
       
       if (fallbackResponse.statusCode == 200) {
-        return _parseRatesResponse(fallbackResponse.body, baseCurrency);
+        print('✅ Fallback URL success (status: ${fallbackResponse.statusCode})');
+        try {
+          final result = _parseRatesResponse(fallbackResponse.body, baseCurrency);
+          print('✅ Parsed fallback rates successfully: ${result.rates.length} currencies');
+          return result;
+        } catch (parseError) {
+          print('⚠️ Error parsing fallback response: $parseError');
+          print('⚠️ Response body: ${fallbackResponse.body.substring(0, math.min(100, fallbackResponse.body.length))}...');
+          throw Exception('Failed to parse exchange rates from both sources');
+        }
+      } else {
+        print('⚠️ Fallback URL failed with status: ${fallbackResponse.statusCode}');
       }
       
-      throw Exception('Failed to load exchange rates: ${response.statusCode}');
+      print('❌ Both primary and fallback URLs failed, returning to mock data as last resort');
+      // If both URLs fail, use mock data as a last resort
+      return _getMockExchangeRates(baseCurrency);
     } catch (e) {
-      print('Error fetching exchange rates: $e');
-      throw Exception('Failed to fetch exchange rates: $e');
+      print('❌ Error fetching exchange rates: $e');
+      // Fallback to mock data in case of network or other errors
+      print('🔄 Falling back to mock data due to error');
+      return _getMockExchangeRates(baseCurrency);
     }
   }
 

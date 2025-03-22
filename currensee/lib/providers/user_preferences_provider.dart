@@ -3,7 +3,7 @@ import '../models/user_preferences.dart';
 import '../services/storage_service.dart';
 
 class UserPreferencesProvider with ChangeNotifier {
-  final StorageService _storageService = StorageService();
+  StorageService _storageService = StorageService();
   bool _isLoading = true;
   String? _error;
   late UserPreferences _preferences;
@@ -44,7 +44,9 @@ class UserPreferencesProvider with ChangeNotifier {
   // Save preferences to storage
   Future<void> _savePreferences() async {
     try {
+      print('📝 Saving preferences to storage: ${_preferences.toJson()}');
       await _storageService.saveUserPreferences(_preferences);
+      print('📝 Preferences saved successfully');
       notifyListeners();
     } catch (e) {
       print('❌ Error saving preferences: $e');
@@ -63,11 +65,27 @@ class UserPreferencesProvider with ChangeNotifier {
     required String baseCurrency,
     required List<String> selectedCurrencies,
   }) async {
+    print('📝 Setting initial currencies: Base=$baseCurrency, Selected=${selectedCurrencies.join(", ")}');
+    
+    // Ensure the base currency is always included in the selected currencies
+    if (!selectedCurrencies.contains(baseCurrency) && baseCurrency.isNotEmpty) {
+      selectedCurrencies = [baseCurrency, ...selectedCurrencies];
+    }
+    
     _preferences = _preferences.copyWith(
       baseCurrencyCode: baseCurrency,
       selectedCurrencyCodes: selectedCurrencies,
     );
-    await _savePreferences();
+    
+    // Save to storage
+    await _storageService.saveUserPreferences(_preferences);
+    
+    // Verify currencies were saved correctly by loading them back
+    final verification = await _storageService.loadUserPreferences();
+    print('📝 Verification - Saved currencies: ${verification.selectedCurrencyCodes.join(", ")}');
+    print('📝 Verification - Saved base currency: ${verification.baseCurrencyCode}');
+    
+    notifyListeners();
   }
 
   // Set theme mode
@@ -118,6 +136,8 @@ class UserPreferencesProvider with ChangeNotifier {
   Future<void> setBaseCurrency(String currencyCode) async {
     if (currencyCode == _preferences.baseCurrencyCode) return;
     
+    print('📝 Setting base currency: $currencyCode');
+    
     // Make sure the currency is in the selected list
     if (!_preferences.selectedCurrencyCodes.contains(currencyCode)) {
       final updatedList = List<String>.from(_preferences.selectedCurrencyCodes)
@@ -132,6 +152,13 @@ class UserPreferencesProvider with ChangeNotifier {
     }
     
     await _storageService.saveUserPreferences(_preferences);
+    print('📝 Base currency saved: $currencyCode');
+    
+    // Verify currencies were saved correctly by loading them back
+    final verification = await _storageService.loadUserPreferences();
+    print('📝 Verification - Selected currencies: ${verification.selectedCurrencyCodes.join(", ")}');
+    print('📝 Verification - Base currency: ${verification.baseCurrencyCode}');
+    
     notifyListeners();
   }
 
@@ -185,6 +212,7 @@ class UserPreferencesProvider with ChangeNotifier {
       _preferences = loadedPrefs;
       print('   AFTER reload: ${_preferences.toJson()}');
       print('   canRefreshRatesToday: ${_preferences.canRefreshRatesToday()}');
+      print('   Selected currencies after reload: ${_preferences.selectedCurrencyCodes.join(", ")}');
       
       notifyListeners();
     } catch (e) {

@@ -24,6 +24,7 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
   String _searchQuery = '';
   bool _isLoading = false;
   bool _hasChanges = false;
+  bool _isSaving = false;
   List<String> _selectedCurrencies = [];
   String _baseCurrencyCode = '';
 
@@ -40,16 +41,24 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
     super.dispose();
   }
   
-  void _initSelectedCurrencies() {
+  void _initSelectedCurrencies() async {
     final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+    
+    // Force reload preferences to ensure we have the latest data
+    await userPrefs.reloadPreferences();
+    
     if (!widget.isInitialSetup) {
       // Only load existing selections if not in initial setup
-      _selectedCurrencies = List.from(userPrefs.selectedCurrencyCodes);
-      _baseCurrencyCode = userPrefs.baseCurrencyCode;
+      setState(() {
+        _selectedCurrencies = List.from(userPrefs.selectedCurrencyCodes);
+        _baseCurrencyCode = userPrefs.baseCurrencyCode;
+      });
     } else {
       // Start with empty selections in initial setup
-      _selectedCurrencies = [];
-      _baseCurrencyCode = '';
+      setState(() {
+        _selectedCurrencies = [];
+        _baseCurrencyCode = '';
+      });
     }
     
     print('Loaded currencies from preferences: Base=${_baseCurrencyCode}, Selected=${_selectedCurrencies.join(", ")}');
@@ -82,6 +91,8 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
   }
 
   void _toggleCurrency(String currencyCode) async {
+    print('Toggle currency: $currencyCode');
+    
     // Check if this is the base currency
     if (currencyCode == _baseCurrencyCode && _selectedCurrencies.contains(currencyCode)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -90,53 +101,169 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
       return;
     }
     
-    final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+    // Show saving indicator
+    setState(() {
+      _isSaving = true;
+    });
     
-    if (_selectedCurrencies.contains(currencyCode)) {
+    final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+    final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+    
+    List<String> newSelectionList = List.from(_selectedCurrencies);
+    
+    if (newSelectionList.contains(currencyCode)) {
       // Remove currency
-      setState(() {
-        _selectedCurrencies.remove(currencyCode);
-        _hasChanges = true;
-      });
+      newSelectionList.remove(currencyCode);
+      print('Removed currency: $currencyCode, selected: ${newSelectionList.join(", ")}');
     } else {
       // Add currency
-      if (!userPrefs.isPremium && _selectedCurrencies.length >= 5) {
+      if (!userPrefs.isPremium && newSelectionList.length >= 5) {
+        // Hide saving indicator
+        setState(() {
+          _isSaving = false;
+        });
         // Show premium limit dialog
         showCurrencyLimitDialog(context);
         return;
       }
       
-      setState(() {
-        _selectedCurrencies.add(currencyCode);
-        _hasChanges = true;
-      });
+      // Add currency
+      newSelectionList.add(currencyCode);
+      print('Added currency: $currencyCode, selected: ${newSelectionList.join(", ")}');
+    }
+    
+    // Update the base currency if it was removed
+    String newBaseCurrency = _baseCurrencyCode;
+    if (newBaseCurrency == currencyCode && !newSelectionList.contains(currencyCode)) {
+      // Base currency was removed, use first available currency
+      if (newSelectionList.isNotEmpty) {
+        newBaseCurrency = newSelectionList.first;
+        print('Base currency was removed, new base: $newBaseCurrency');
+      } else {
+        newBaseCurrency = '';
+        print('No currencies selected, base currency cleared');
+      }
+    } else if (newBaseCurrency.isEmpty && newSelectionList.isNotEmpty) {
+      // No base currency but we have selected currencies
+      newBaseCurrency = newSelectionList.first;
+      print('No base currency set, using first selected: $newBaseCurrency');
+    }
+    
+    // Update state with new selections
+    setState(() {
+      _selectedCurrencies = newSelectionList;
+      _baseCurrencyCode = newBaseCurrency;
+      _hasChanges = true;
+    });
+    
+    try {
+      // Step 1: Set the base currency first if needed
+      if (userPrefs.baseCurrencyCode != newBaseCurrency) {
+        print('Updating base currency to $newBaseCurrency');
+        await userPrefs.setBaseCurrency(newBaseCurrency);
+        currencyProvider.setBaseCurrency(newBaseCurrency);
+      }
+      
+      // Step 2: Update the selected currencies in user preferences
+      print('Updating selected currencies to: ${newSelectionList.join(", ")}');
+      await userPrefs.setInitialCurrencies(
+        baseCurrency: newBaseCurrency,
+        selectedCurrencies: newSelectionList,
+      );
+      
+      // Step 3: Force the currency provider to reload the selected currencies
+      print('Reloading selected currencies in provider');
+      await currencyProvider.selectCurrencies(newSelectionList);
+      
+      // Step 4: Force storage synchronization by reloading preferences
+      print('Forcing preference reload to ensure persistence');
+      await userPrefs.reloadPreferences();
+      
+      print('Currency selection changes successfully synchronized and saved');
+    } catch (e) {
+      print('Error updating currency selection: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update selection: $e')),
+      );
+    } finally {
+      // Hide saving indicator if the widget is still mounted
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
     }
   }
   
   // Method to set a currency as the base currency
-  void _setBaseCurrency(String currencyCode) {
+  void _setBaseCurrency(String currencyCode) async {
+    print('Setting base currency: $currencyCode');
+    
+    // Show saving indicator
+    setState(() {
+      _isSaving = true;
+    });
+    
+    final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+    final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+    
+    // Copy the selection list to avoid modification issues
+    List<String> updatedSelections = List.from(_selectedCurrencies);
+    
     // Make sure the currency is in the selected list
-    if (!_selectedCurrencies.contains(currencyCode)) {
-      setState(() {
-        _selectedCurrencies.add(currencyCode);
-        _baseCurrencyCode = currencyCode;
-        _hasChanges = true;
-      });
-    } else {
-      setState(() {
-        _baseCurrencyCode = currencyCode;
-        _hasChanges = true;
-      });
+    if (!updatedSelections.contains(currencyCode)) {
+      updatedSelections.add(currencyCode);
+      print('Added new base currency to selections: $currencyCode');
     }
     
-    // Show confirmation
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$currencyCode set as base currency'),
-          duration: const Duration(seconds: 1),
-        ),
+    // Update state
+    setState(() {
+      _selectedCurrencies = updatedSelections;
+      _baseCurrencyCode = currencyCode;
+      _hasChanges = true;
+    });
+    
+    try {
+      // First update the base currency specifically
+      await userPrefs.setBaseCurrency(currencyCode);
+      print('Base currency updated in UserPreferences: $currencyCode');
+      
+      // Then update the full selection
+      await userPrefs.setInitialCurrencies(
+        baseCurrency: currencyCode, 
+        selectedCurrencies: updatedSelections
       );
+      
+      // Update the currency provider
+      currencyProvider.setBaseCurrency(currencyCode);
+      
+      // Reload all selected currencies with updated order
+      await currencyProvider.selectCurrencies(updatedSelections);
+      print('Successfully updated base currency: $currencyCode and selections: ${updatedSelections.join(", ")}');
+      
+      // Show confirmation
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$currencyCode set as base currency'),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error setting base currency: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to set base currency: $e')),
+        );
+      }
+    } finally {
+      // Hide saving indicator if the widget is still mounted
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
     }
   }
 
@@ -160,16 +287,25 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
     final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
 
     try {
-      // Save changes
+      print('Saving changes: Base=${_baseCurrencyCode}, Selected=${_selectedCurrencies.join(", ")}');
+      
+      // Save base currency first if it changed
+      if (_baseCurrencyCode != userPrefs.baseCurrencyCode) {
+        await userPrefs.setBaseCurrency(_baseCurrencyCode);
+      }
+      
+      // Save selected currencies
       await userPrefs.setInitialCurrencies(
         baseCurrency: _baseCurrencyCode,
         selectedCurrencies: _selectedCurrencies,
       );
       
-      // Update currency provider
-      await currencyProvider.reloadSelectedCurrencies(_selectedCurrencies);
-
-      // Mark setup as complete
+      // Flag changes as saved
+      setState(() {
+        _hasChanges = false;
+      });
+      
+      // Mark setup as complete if in initial setup mode
       if (widget.isInitialSetup) {
         await userPrefs.completeInitialSetup();
       }
@@ -182,10 +318,12 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
             (route) => false,
           );
         } else {
+          // Just pop back to the previous screen
           Navigator.of(context).pop();
         }
       }
     } catch (e) {
+      print('Error saving currency changes: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to save changes: $e')),
@@ -224,6 +362,67 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
           );
           return false;
         }
+        
+        // Auto-save if there are unsaved changes
+        if (_hasChanges) {
+          // Ensure we have at least one currency selected
+          if (_selectedCurrencies.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Please select at least one currency')),
+            );
+            return false;
+          }
+          
+          // If no base currency is set but we have currencies, use the first one as base
+          if (_baseCurrencyCode.isEmpty && _selectedCurrencies.isNotEmpty) {
+            _baseCurrencyCode = _selectedCurrencies.first;
+          }
+          
+          try {
+            final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+            final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+            
+            setState(() {
+              _isSaving = true;
+            });
+            
+            // Save selected currencies and base currency
+            print('Auto-saving changes on back button press: Base=${_baseCurrencyCode}, Selected=${_selectedCurrencies.join(", ")}');
+            
+            // Step 1: Set the base currency first if needed
+            if (userPrefs.baseCurrencyCode != _baseCurrencyCode) {
+              print('Updating base currency to $_baseCurrencyCode');
+              await userPrefs.setBaseCurrency(_baseCurrencyCode);
+              currencyProvider.setBaseCurrency(_baseCurrencyCode);
+            }
+            
+            // Step 2: Update the selected currencies in user preferences
+            await userPrefs.setInitialCurrencies(
+              baseCurrency: _baseCurrencyCode,
+              selectedCurrencies: _selectedCurrencies,
+            );
+            
+            // Step 3: Force the currency provider to reload the selected currencies
+            await currencyProvider.selectCurrencies(_selectedCurrencies);
+            
+            // Step 4: Force storage synchronization by reloading preferences
+            await userPrefs.reloadPreferences();
+            
+            setState(() {
+              _isSaving = false;
+            });
+            
+            print('Changes successfully saved through Android back button');
+          } catch (e) {
+            print('Error auto-saving changes: $e');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to save changes: $e')),
+              );
+            }
+          }
+        }
+        
         return true;
       },
       child: Scaffold(
@@ -231,10 +430,90 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
           title: Text(widget.isInitialSetup ? 'Select Currencies' : 'Currencies'),
           leading: widget.isInitialSetup ? null : IconButton(
             icon: const Icon(Icons.arrow_back),
-            onPressed: () {
+            onPressed: () async {
+              // Force save changes if any exist before navigating back
+              if (_hasChanges) {
+                // Ensure at least one currency is selected
+                if (_selectedCurrencies.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please select at least one currency')),
+                  );
+                  return;
+                }
+                
+                // If no base currency is set but we have currencies, use the first one as base
+                if (_baseCurrencyCode.isEmpty && _selectedCurrencies.isNotEmpty) {
+                  _baseCurrencyCode = _selectedCurrencies.first;
+                }
+                
+                try {
+                  final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+                  final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+                  
+                  setState(() {
+                    _isSaving = true;
+                  });
+                  
+                  print('Saving changes via back button: Base=${_baseCurrencyCode}, Selected=${_selectedCurrencies.join(", ")}');
+                  
+                  // Step 1: Set the base currency first if needed
+                  if (userPrefs.baseCurrencyCode != _baseCurrencyCode) {
+                    print('Updating base currency to $_baseCurrencyCode');
+                    await userPrefs.setBaseCurrency(_baseCurrencyCode);
+                    currencyProvider.setBaseCurrency(_baseCurrencyCode);
+                  }
+                  
+                  // Step 2: Update the selected currencies in user preferences
+                  print('Updating selected currencies via back button');
+                  await userPrefs.setInitialCurrencies(
+                    baseCurrency: _baseCurrencyCode,
+                    selectedCurrencies: _selectedCurrencies,
+                  );
+                  
+                  // Step 3: Force the currency provider to reload the selected currencies
+                  print('Reloading selected currencies in provider');
+                  await currencyProvider.selectCurrencies(_selectedCurrencies);
+                  
+                  // Step 4: Force storage synchronization by reloading preferences
+                  print('Forcing preference reload to ensure persistence');
+                  await userPrefs.reloadPreferences();
+                  
+                  setState(() {
+                    _isSaving = false;
+                  });
+                  
+                  print('Changes successfully saved through back button');
+                } catch (e) {
+                  print('Error saving changes via back button: $e');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to save changes: $e')),
+                  );
+                  return;
+                }
+              }
+              
               Navigator.of(context).pop();
             },
           ),
+          actions: [
+            // Add a saving indicator in the app bar
+            if (_isSaving)
+              Padding(
+                padding: const EdgeInsets.only(right: 16.0),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.0,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Theme.of(context).colorScheme.onPrimary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
         body: Column(
           children: [
@@ -328,36 +607,55 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
             // Currency list
             Expanded(
               child: ListView.builder(
+                key: PageStorageKey('currency_list'), // Add key to preserve scroll position
                 itemCount: selectedCurrencies.length + unselectedCurrencies.length,
                 itemBuilder: (context, index) {
+                  // Create a copy of the selected currencies list to avoid modifying the original during build
+                  List<dynamic> displaySelectedCurrencies = List.from(selectedCurrencies);
+                  
                   // Move base currency to top if it exists
-                  final baseIndex = selectedCurrencies.indexWhere((c) => c.code == _baseCurrencyCode);
+                  final baseIndex = displaySelectedCurrencies.indexWhere((c) => c.code == _baseCurrencyCode);
                   if (baseIndex != -1) {
                     // Reorder the list to put base currency first
-                    final baseCurrency = selectedCurrencies.removeAt(baseIndex);
-                    selectedCurrencies.insert(0, baseCurrency);
+                    final baseCurrency = displaySelectedCurrencies.removeAt(baseIndex);
+                    displaySelectedCurrencies.insert(0, baseCurrency);
                   }
 
                   // Show selected currencies first (with base currency at top)
-                  if (index < selectedCurrencies.length) {
-                    return _buildCurrencyTile(selectedCurrencies[index], true);
+                  if (index < displaySelectedCurrencies.length) {
+                    return _buildCurrencyTile(displaySelectedCurrencies[index], true);
                   }
 
                   // Then show unselected currencies
-                  final unselectedIndex = index - selectedCurrencies.length;
-                  return _buildCurrencyTile(unselectedCurrencies[unselectedIndex], false);
+                  final unselectedIndex = index - displaySelectedCurrencies.length;
+                  if (unselectedIndex < unselectedCurrencies.length) {
+                    return _buildCurrencyTile(unselectedCurrencies[unselectedIndex], false);
+                  }
+                  
+                  // Safety check - return empty container if index is out of bounds
+                  return Container(key: ValueKey('empty_$index'));
                 },
               ),
             ),
           ],
         ),
-        bottomNavigationBar: widget.isInitialSetup || _hasChanges
+        bottomNavigationBar: widget.isInitialSetup
             ? SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: FilledButton(
-                    onPressed: _selectedCurrencies.isEmpty ? null : _saveChangesAndContinue,
-                    child: Text(widget.isInitialSetup ? 'Continue' : 'Save Changes'),
+                    onPressed: _selectedCurrencies.isEmpty 
+                        ? null 
+                        : () {
+                            if (_baseCurrencyCode.isEmpty && _selectedCurrencies.isNotEmpty) {
+                              // If no base currency is set during initial setup, use the first one
+                              setState(() {
+                                _baseCurrencyCode = _selectedCurrencies.first;
+                              });
+                            }
+                            _saveChangesAndContinue();
+                          },
+                    child: const Text('Continue'),
                   ),
                 ),
               )
@@ -417,8 +715,11 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
           Transform.scale(
             scale: 1.2,
             child: Checkbox(
+              key: ValueKey('checkbox_${currency.code}'),
               value: isSelected,
               onChanged: (bool? value) {
+                print('Checkbox clicked for ${currency.code} with value: $value');
+                print('Current selection state before toggle: $isSelected');
                 _toggleCurrency(currency.code);
               },
               activeColor: const Color(0xFF8FD584),

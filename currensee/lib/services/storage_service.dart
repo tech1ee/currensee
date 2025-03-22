@@ -13,6 +13,7 @@ class StorageService {
     print('   isPremium: ${preferences.isPremium}');
     print('   themeMode: ${preferences.themeMode}');
     print('   baseCurrency: ${preferences.baseCurrencyCode}');
+    print('   selectedCurrencies: ${preferences.selectedCurrencyCodes.join(", ")}');
     print('   lastRatesRefresh: ${preferences.lastRatesRefresh}');
     print('   hasCompletedInitialSetup: ${preferences.hasCompletedInitialSetup}');
     
@@ -29,12 +30,14 @@ class StorageService {
       AppConstants.prefsKeySelectedCurrencies,
       preferences.selectedCurrencyCodes,
     );
+    print('   Saved selected currencies to storage: ${preferences.selectedCurrencyCodes.join(", ")}');
     
     // Save base currency
     await prefs.setString(
       AppConstants.prefsKeyBaseCurrency,
       preferences.baseCurrencyCode,
     );
+    print('   Saved base currency to storage: ${preferences.baseCurrencyCode}');
     
     // Save premium status
     await prefs.setBool(
@@ -60,6 +63,12 @@ class StorageService {
       print('   Last rates refresh is null, removing from storage if exists');
       await prefs.remove(AppConstants.prefsKeyLastRatesRefresh);
     }
+    
+    // Double check that selected currencies were saved properly
+    final savedCurrencies = prefs.getStringList(AppConstants.prefsKeySelectedCurrencies) ?? [];
+    print('   VERIFICATION - stored currencies: ${savedCurrencies.join(", ")}');
+    final savedBase = prefs.getString(AppConstants.prefsKeyBaseCurrency) ?? '';
+    print('   VERIFICATION - stored base currency: $savedBase');
     
     print('💾 STORAGE: User preferences saved successfully');
   }

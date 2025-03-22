@@ -63,6 +63,10 @@ class _MyAppState extends State<MyApp> {
       while (_userPrefs.isLoading) {
         await Future.delayed(const Duration(milliseconds: 50));
       }
+      
+      // Force reload preferences to get the latest data
+      await _userPrefs.reloadPreferences();
+      
       print('✅ User preferences loaded:');
       print('   Base currency: ${_userPrefs.baseCurrencyCode}');
       print('   Selected currencies: ${_userPrefs.selectedCurrencyCodes.join(', ')}');

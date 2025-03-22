@@ -51,10 +51,21 @@ class CurrencyProvider with ChangeNotifier {
   
   // Initialize with selected currency codes
   Future<void> initialize(List<String> selectedCurrencyCodes, String baseCurrencyCode) async {
+    print('🔄 Initializing currency provider with: Base=$baseCurrencyCode, Selected=${selectedCurrencyCodes.join(", ")}');
+    
     _baseCurrencyCode = baseCurrencyCode;
     
     // Load user preferences
     _userPreferences = await _storageService.loadUserPreferences();
+    
+    // Always get the latest preferences for currencies - this ensures any saved changes are loaded
+    final latestPreferences = await _storageService.loadUserPreferences();
+    if (latestPreferences.selectedCurrencyCodes.isNotEmpty) {
+      print('🔄 Updating with latest preferences: Base=${latestPreferences.baseCurrencyCode}, Selected=${latestPreferences.selectedCurrencyCodes.join(", ")}');
+      selectedCurrencyCodes = latestPreferences.selectedCurrencyCodes;
+      baseCurrencyCode = latestPreferences.baseCurrencyCode;
+      _baseCurrencyCode = baseCurrencyCode;
+    }
     
     // Try to load cached exchange rates
     final cachedRates = await _storageService.loadExchangeRates();
@@ -100,13 +111,30 @@ class CurrencyProvider with ChangeNotifier {
       sortedCodes.insert(0, baseCurrencyCode);
     }
     
-    // Load currencies in the sorted order
-    _selectedCurrencies = sortedCodes
-        .map((code) => _allCurrencies.firstWhere((c) => c.code == code))
-        .toList();
+    // Safety check - make sure we have loaded currencies
+    if (_allCurrencies.isEmpty) {
+      print('⚠️ No currencies loaded yet, loading them first');
+      await loadAllCurrencies();
+    }
+    
+    // Load currencies in the sorted order with safety check
+    try {
+      _selectedCurrencies = sortedCodes
+          .where((code) => _allCurrencies.any((c) => c.code == code))
+          .map((code) => _allCurrencies.firstWhere((c) => c.code == code))
+          .toList();
+      
+      print('✅ Selected currencies: ${_selectedCurrencies.map((c) => c.code).join(", ")}');
+    } catch (e) {
+      print('❌ Error selecting currencies: $e');
+      // Fallback to empty list to prevent crashes
+      _selectedCurrencies = [];
+    }
     
     // Set initial values based on base currency
-    _recalculateValuesFromCurrency(baseCurrencyCode, 1.0);
+    if (baseCurrencyCode.isNotEmpty) {
+      _recalculateValuesFromCurrency(baseCurrencyCode, 1.0);
+    }
     
     notifyListeners();
   }
@@ -136,14 +164,38 @@ class CurrencyProvider with ChangeNotifier {
     notifyListeners();
     
     try {
-      print('📊 FETCH EXCHANGE RATES: Requesting latest rates from API');
+      print('📊 FETCH EXCHANGE RATES: Requesting latest rates from API for $_baseCurrencyCode');
+      
+      // Safety check - validate base currency code
+      if (_baseCurrencyCode.isEmpty) {
+        print('⚠️ Base currency code is empty, using USD as fallback');
+        _baseCurrencyCode = 'USD';
+      }
+      
       final rates = await _apiService.fetchExchangeRates(_baseCurrencyCode);
-      _exchangeRates = rates;
+      
+      // Validate the returned exchange rates
+      if (rates.rates.isEmpty) {
+        print('⚠️ API returned empty rates, using mock or cached data as fallback');
+        
+        // Try to load cached rates
+        final cachedRates = await _storageService.loadExchangeRates();
+        if (cachedRates != null) {
+          print('✅ Using cached exchange rates from: ${cachedRates.timestamp}');
+          _exchangeRates = cachedRates;
+        } else {
+          throw Exception('Failed to fetch exchange rates and no cached data available');
+        }
+      } else {
+        print('✅ Successfully received exchange rates from API');
+        _exchangeRates = rates;
+      }
+      
       _isOffline = false;
       
       // Save rates to storage
       print('📊 FETCH EXCHANGE RATES: Saving rates to storage');
-      await _storageService.saveExchangeRates(rates);
+      await _storageService.saveExchangeRates(_exchangeRates!);
       
       // Update the last refresh time in user preferences - this is crucial for the refresh limit
       if (_userPreferences != null) {
@@ -170,9 +222,31 @@ class CurrencyProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Failed to fetch exchange rates: $e';
+      print('❌ ERROR in fetchExchangeRates: $e');
+      
+      // Provide more detailed error information
+      if (e.toString().contains('SocketException') || e.toString().contains('Connection refused')) {
+        _error = 'Network connection error. Please check your internet connection and try again.';
+        _isOffline = true;
+      } else if (e.toString().contains('timeout')) {
+        _error = 'Request timed out. Server might be slow or unavailable.';
+        _isOffline = true;
+      } else {
+        _error = 'Failed to fetch exchange rates: $e';
+      }
+      
+      print('⚠️ Attempting to use cached rates as fallback');
+      final cachedRates = await _storageService.loadExchangeRates();
+      if (cachedRates != null) {
+        print('✅ Using cached exchange rates from: ${cachedRates.timestamp}');
+        _exchangeRates = cachedRates;
+        _isOffline = true;
+        
+        // Even with cached rates, we should update the UI
+        _updateCurrencyValues();
+      }
+      
       _isLoadingRates = false;
-      _isOffline = true;
       notifyListeners();
       return false;
     }
@@ -244,18 +318,77 @@ class CurrencyProvider with ChangeNotifier {
       sortedCodes.insert(0, baseCurrencyCode);
     }
     
-    // Update selected currencies in the sorted order
-    _selectedCurrencies = sortedCodes
-        .map((code) => _allCurrencies.firstWhere((c) => c.code == code))
-        .toList();
+    // Safety check - make sure we have loaded currencies
+    if (_allCurrencies.isEmpty) {
+      print('⚠️ No currencies loaded yet, loading them first');
+      await loadAllCurrencies();
+    }
     
-    // Set initial values based on base currency
-    _recalculateValuesFromCurrency(baseCurrencyCode, 1.0);
+    // Update selected currencies in the sorted order with safety check
+    try {
+      _selectedCurrencies = sortedCodes
+          .where((code) => _allCurrencies.any((c) => c.code == code))
+          .map((code) => _allCurrencies.firstWhere((c) => c.code == code))
+          .toList();
+      
+      print('✅ Selected currencies: ${_selectedCurrencies.map((c) => c.code).join(", ")}');
+      
+      // Make sure the currency selection is saved to user preferences
+      if (_userPreferences != null) {
+        // Get current list
+        final currentList = _userPreferences!.selectedCurrencyCodes;
+        
+        // Check if list has changed
+        final needsUpdate = !_listEquals(currentList, sortedCodes);
+        
+        if (needsUpdate) {
+          print('🔄 Currency selection changed, saving to preferences');
+          
+          // Create updated user preferences
+          final updatedPrefs = _userPreferences!.copyWith(
+            selectedCurrencyCodes: sortedCodes,
+            baseCurrencyCode: baseCurrencyCode.isNotEmpty ? baseCurrencyCode : 
+              (sortedCodes.isNotEmpty ? sortedCodes.first : 'USD')
+          );
+          
+          // Save to storage
+          await _storageService.saveUserPreferences(updatedPrefs);
+          
+          // Update in memory
+          _userPreferences = updatedPrefs;
+          
+          // Verify save was successful
+          final verification = await _storageService.loadUserPreferences();
+          print('✅ Verification - Selected currencies: ${verification.selectedCurrencyCodes.join(", ")}');
+          print('✅ Verification - Base currency: ${verification.baseCurrencyCode}');
+        }
+      }
+    } catch (e) {
+      print('❌ Error selecting currencies: $e');
+      // Fallback to default currency or empty list
+      _selectedCurrencies = [];
+    }
+    
+    // Set initial values based on base currency if we have rates
+    if (baseCurrencyCode.isNotEmpty) {
+      _recalculateValuesFromCurrency(baseCurrencyCode, 1.0);
+    }
     
     notifyListeners();
     
     // Fetch latest rates for selected currencies
     await fetchExchangeRates();
+  }
+  
+  // Helper method to compare lists
+  bool _listEquals(List<String> list1, List<String> list2) {
+    if (list1.length != list2.length) return false;
+    
+    for (int i = 0; i < list1.length; i++) {
+      if (list1[i] != list2[i]) return false;
+    }
+    
+    return true;
   }
 
   // Methods to track which currency is currently being edited

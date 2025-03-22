@@ -88,7 +88,7 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
           ? Theme.of(context).colorScheme.primary.withOpacity(0.08)
           : Colors.transparent,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
@@ -147,8 +147,10 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
                 controller: _controller,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 textAlign: TextAlign.right,
-                decoration: const InputDecoration.collapsed(
+                decoration: InputDecoration.collapsed(
                   hintText: '',
+                  // Increase the content padding to make the field taller
+                  border: InputBorder.none,
                 ),
                 style: TextStyle(
                   fontSize: 18,
@@ -156,10 +158,19 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
                   letterSpacing: -0.3,
                   color: Theme.of(context).textTheme.bodyLarge?.color,
                 ),
+                // Make sure field takes full height of the parent container
+                expands: false,
+                maxLines: 1,
+                minLines: 1,
+                // Ensure the input field has sufficient height
+                inputFormatters: [
+                  LengthLimitingTextInputFormatter(15), // Limit input length
+                ],
                 onTap: () {
                   setState(() {
                     _isEditing = true;
                   });
+                  widget.onEditStart();
                 },
                 onChanged: (value) {
                   // Clean the input value - remove any non-numeric characters except decimal point
@@ -185,12 +196,14 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
                     _isEditing = false;
                   });
                   _updateControllerText();
+                  widget.onEditEnd();
                 },
                 onSubmitted: (_) {
                   setState(() {
                     _isEditing = false;
                   });
                   _updateControllerText();
+                  widget.onEditEnd();
                 },
               ),
             ),

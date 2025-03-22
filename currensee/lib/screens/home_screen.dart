@@ -222,31 +222,60 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _showCurrenciesScreen() async {
+    final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
     final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
     
-    // Show ad for free users
-    if (!userPrefs.isPremium) {
-      _adService.showInterstitialAd();
+    print('Before navigation - selected currencies: ${userPrefs.selectedCurrencyCodes.join(", ")}');
+    print('Before navigation - base currency: ${userPrefs.baseCurrencyCode}');
+    
+    // Dismiss keyboard if it's open
+    KeyboardUtil.hideKeyboard();
+    
+    if (Platform.isIOS) {
+      try {
+        // For iOS, native method to dismiss keyboard
+        await _keyboardChannel.invokeMethod('hideKeyboard');
+      } catch (e) {
+        print('Failed to hide keyboard via method channel: $e');
+      }
     }
     
-    // Store the current number of selected currencies to detect changes
-    final int currentCurrencyCount = userPrefs.selectedCurrencyCodes.length;
-    
-    // Navigate to currencies screen
+    // Show interstitial ad occasionally
+    _adService.showInterstitialAd();
+
+    // Navigate to the currencies screen
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const CurrenciesScreen()),
     );
     
-    // Check if currencies were added/removed and refresh if needed
-    if (mounted) {
-      final int newCurrencyCount = userPrefs.selectedCurrencyCodes.length;
-      
-      if (currentCurrencyCount != newCurrencyCount) {
-        // Force refresh of currency provider
-        await Provider.of<CurrencyProvider>(context, listen: false).fetchExchangeRates();
-      }
+    if (!mounted) return;
+    
+    // After returning, force reload preferences to ensure we have the latest data
+    await userPrefs.reloadPreferences();
+    
+    // Reload selected currencies in the currency provider
+    await currencyProvider.reloadSelectedCurrencies(userPrefs.selectedCurrencyCodes);
+    
+    print('After navigation - selected currencies: ${userPrefs.selectedCurrencyCodes.join(", ")}');
+    print('After navigation - base currency: ${userPrefs.baseCurrencyCode}');
+    
+    // Update UI to reflect any changes
+    setState(() {});
+  }
+  
+  // Helper to check if two lists have the same elements (order doesn't matter)
+  bool _areListsEqual(List<String> list1, List<String> list2) {
+    if (list1.length != list2.length) return false;
+    
+    final sortedList1 = List<String>.from(list1)..sort();
+    final sortedList2 = List<String>.from(list2)..sort();
+    
+    for (int i = 0; i < sortedList1.length; i++) {
+      if (sortedList1[i] != sortedList2[i]) return false;
     }
+    
+    return true;
   }
 
   void _setBaseCurrency(String currencyCode) {
@@ -746,9 +775,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             Positioned(
               left: 0,
               right: 0,
-              bottom: MediaQuery.of(context).viewInsets.bottom,
+              bottom: 0,
               child: AdBannerWidget(isPremium: userPrefs.isPremium),
             ),
+            
+            // Offline indicator
+            if (isOffline)
+              Positioned(
+                top: 8,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.8),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'Offline Mode - Using cached rates',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
