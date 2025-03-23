@@ -477,7 +477,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          DateFormat('dd.MM').format(currencyProvider.userPreferences!.lastRatesRefresh!),
+                          'Last refresh',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w500,
+                            color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.5),
+                          ),
+                        ),
+                        Text(
+                          DateFormat('dd.MM.yyyy').format(currencyProvider.userPreferences!.lastRatesRefresh!),
                           style: TextStyle(
                             fontSize: 10,
                             color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.4),

@@ -8,10 +8,12 @@ A modern currency tracking application with real-time exchange rates.
 
 - **Real-time Currency Conversion**: Track and convert between multiple currencies with up-to-date exchange rates
 - **Customizable Base Currency**: Set any currency as your base for conversions
+- **Rate Limiting with Caching**: Free users can refresh rates once per day with proper timestamp tracking
 - **Offline Support**: Continue using the app with the most recent rates when offline
 - **Dark & Light Themes**: Choose between dark and light modes for comfortable viewing
 - **Premium Subscription**: Unlock unlimited daily refreshes and remove ads
 - **User-Friendly Interface**: Intuitive design for easy currency management
+- **Accurate Timestamp Display**: Clear indication of when rates were last refreshed from the API
 
 ## Screenshots
 
@@ -80,12 +82,35 @@ The app offers a premium subscription that includes:
 - Ad-free experience
 - Priority support
 
+## Free vs Premium
+
+### Free Version
+- Limited to one exchange rate refresh per day
+- Last refresh timestamp is accurately preserved between app launches
+- Cached rates are used when refresh limit is reached
+- Shows ads
+
+### Premium Version
+- Unlimited exchange rate refreshes
+- No waiting period between refreshes
+- Ad-free experience
+
+## Recent Improvements
+
+- **Fixed Timestamp Display**: Free users now see the accurate last refresh time instead of the current time when the app launches
+- **Optimized Rate Refreshing**: Reduced unnecessary API calls for free users who have already refreshed that day
+- **Enhanced Caching**: Preserved original timestamps when loading cached exchange rates
+- **Improved UI Clarity**: Better visual indication of when rates were last updated from the API
+
 ## Future Enhancements
 
 - Historical rate charts
 - Currency alerts and notifications
 - Offline currency calculator
+- Enhanced flag display for all currencies
 - Additional themes and customization options
+- Widgets for home screen quick access
+- Improved performance on low-end devices
 
 ## Privacy Policy
 

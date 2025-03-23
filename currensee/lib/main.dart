@@ -77,10 +77,7 @@ class _MyAppState extends State<MyApp> {
       
       // Now initialize currency provider with user preferences
       print('⏳ Initializing currency provider...');
-      await _currencyProvider.initialize(
-        _userPrefs.selectedCurrencyCodes,
-        _userPrefs.baseCurrencyCode,
-      );
+      await _currencyProvider.initialize();
       print('✅ Currency provider initialized');
       
       if (mounted) {

@@ -125,19 +125,33 @@ class ExchangeRates {
       }
     }
     
-    // Parse timestamp or use current time
+    // Parse timestamp from the stored value
     DateTime time;
     if (json['timestamp'] != null) {
       try {
         if (json['timestamp'] is int) {
-          time = DateTime.fromMillisecondsSinceEpoch(json['timestamp'] * 1000);
+          // Handle milliseconds vs seconds timestamp format
+          final timestamp = json['timestamp'] as int;
+          // If timestamp is in seconds (API format), convert to milliseconds
+          // If already in milliseconds (our storage format), use directly
+          final isInSeconds = timestamp < 10000000000; // Basic check if in seconds vs milliseconds
+          time = DateTime.fromMillisecondsSinceEpoch(
+            isInSeconds ? timestamp * 1000 : timestamp
+          );
+        } else if (json['timestamp'] is String) {
+          // Try to parse string timestamp
+          time = DateTime.parse(json['timestamp']);
         } else {
+          // Fallback - but log the issue
+          print('⚠️ Unknown timestamp format: ${json['timestamp']}');
           time = DateTime.now();
         }
       } catch (e) {
+        print('⚠️ Error parsing timestamp: $e');
         time = DateTime.now();
       }
     } else {
+      print('⚠️ No timestamp found in exchange rates data');
       time = DateTime.now();
     }
     
@@ -149,9 +163,11 @@ class ExchangeRates {
   }
 
   Map<String, dynamic> toJson() {
+    // Save the rates and timestamp in a consistent format
+    // that can be correctly parsed by fromJson
     return {
       'base': base,
-      'timestamp': timestamp.millisecondsSinceEpoch ~/ 1000,
+      'timestamp': timestamp.millisecondsSinceEpoch, // Store as milliseconds for better precision
       'rates': rates,
     };
   }

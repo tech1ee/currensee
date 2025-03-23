@@ -104,13 +104,18 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
               width: 36,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
-                child: Image.network(
-                  widget.currency.flagUrl,
-                  width: 36,
-                  height: 24,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.flag, color: Colors.grey),
-                ),
+                child: widget.currency.flagUrl.isNotEmpty
+                    ? Image.network(
+                        widget.currency.flagUrl,
+                        width: 36,
+                        height: 24,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          print('❌ Error loading flag for ${widget.currency.code}: $error');
+                          return const Icon(Icons.flag, color: Colors.grey);
+                        },
+                      )
+                    : const Icon(Icons.flag, color: Colors.grey),
               ),
             ),
             const SizedBox(width: 16),

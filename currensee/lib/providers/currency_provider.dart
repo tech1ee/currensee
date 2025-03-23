@@ -18,6 +18,7 @@ class RefreshResult {
 class CurrencyProvider with ChangeNotifier {
   final ApiService _apiService = ApiService();
   final StorageService _storageService = StorageService();
+  final UserPreferencesProvider _userPreferencesProvider = UserPreferencesProvider();
   
   List<Currency> _allCurrencies = [];
   List<Currency> _selectedCurrencies = [];
@@ -50,51 +51,151 @@ class CurrencyProvider with ChangeNotifier {
     _userPreferences?.canRefreshRatesToday() ?? true;
   
   // Initialize with selected currency codes
-  Future<void> initialize(List<String> selectedCurrencyCodes, String baseCurrencyCode) async {
-    print('🔄 Initializing currency provider with: Base=$baseCurrencyCode, Selected=${selectedCurrencyCodes.join(", ")}');
+  Future<void> initialize() async {
+    print('🔄 Initializing currency provider with: Base=$_baseCurrencyCode, Selected=${_selectedCurrencies.map((c) => c.code).join(", ")}');
     
-    _baseCurrencyCode = baseCurrencyCode;
+    try {
+      // Load user preferences
+      _userPreferences = await _storageService.loadUserPreferences();
+      
+      // Try to load cached exchange rates first
+      final cachedRates = await _storageService.loadExchangeRates();
+      if (cachedRates != null) {
+        _exchangeRates = cachedRates;
+        print('💾 Loaded cached exchange rates from ${_exchangeRates!.timestamp}');
+      }
+      
+      // Always ensure we have the latest preferences
+      final latestPreferences = await _storageService.loadUserPreferences();
+      if (latestPreferences.selectedCurrencyCodes.isNotEmpty) {
+        print('🔄 Updating with latest preferences: Base=${latestPreferences.baseCurrencyCode}, Selected=${latestPreferences.selectedCurrencyCodes.join(", ")}');
+        
+        // Set base currency without triggering API calls
+        _baseCurrencyCode = latestPreferences.baseCurrencyCode;
+        
+        // Set up selected currencies without triggering API calls
+        await _setupSelectedCurrencies(latestPreferences.selectedCurrencyCodes);
+      }
+      
+      // Make sure we have the base currency in selected currencies
+      if (!_selectedCurrencies.any((c) => c.code == _baseCurrencyCode)) {
+        print('⚠️ Base currency not found in selected, adding $_baseCurrencyCode');
+        // Load currencies if needed
+        if (_allCurrencies.isEmpty) {
+          await loadAllCurrencies();
+        }
+        
+        // Find the currency object for the base currency
+        final baseCurrency = _allCurrencies.firstWhere(
+          (c) => c.code == _baseCurrencyCode,
+          orElse: () => Currency(
+            code: _baseCurrencyCode, 
+            name: _baseCurrencyCode, 
+            symbol: _baseCurrencyCode, 
+            value: 1.0,
+            flagUrl: ''
+          )
+        );
+        _selectedCurrencies.add(baseCurrency);
+      }
+      
+      // Check if we need to fetch fresh rates
+      final isPremium = _userPreferences?.isPremium ?? false;
+      final canRefreshToday = _userPreferences?.canRefreshRatesToday() ?? true;
+      final hasCachedRates = _exchangeRates != null;
+      
+      print('🔄 INITIALIZATION CHECK:');
+      print('   isPremium: $isPremium');
+      print('   canRefreshToday: $canRefreshToday');
+      print('   hasCachedRates: $hasCachedRates');
+      
+      // Recalculate with cached rates first (this ensures the UI has some data to show)
+      if (hasCachedRates) {
+        _recalculateValuesFromCurrency(_baseCurrencyCode, 1.0);
+      }
+      
+      // Fetch fresh rates only if needed (premium user or can refresh today)
+      if (isPremium || (canRefreshToday && !hasCachedRates)) {
+        print('🔄 Fetching fresh rates - user is premium or first-time/can refresh today');
+        await fetchExchangeRates();
+      } else if (hasCachedRates) {
+        print('🔄 Using cached rates - free user already refreshed today');
+        // For free users who already refreshed today,
+        // we just use cached rates with their original timestamp
+      } else {
+        print('⚠️ No cached rates and cannot refresh today');
+        _isOffline = true;
+        _error = 'No exchange rate data available. Try again tomorrow.';
+      }
+      
+      notifyListeners();
+      print('✅ Currency provider initialized');
+    } catch (e) {
+      print('❌ Error initializing currency provider: $e');
+      _error = 'Failed to initialize: $e';
+      notifyListeners();
+    }
+  }
+  
+  // Helper method to set up selected currencies without triggering API calls
+  Future<void> _setupSelectedCurrencies(List<String> currencyCodes) async {
+    print('🔄 Setting up selected currencies: ${currencyCodes.join(", ")}');
     
-    // Load user preferences
-    _userPreferences = await _storageService.loadUserPreferences();
-    
-    // Always get the latest preferences for currencies - this ensures any saved changes are loaded
-    final latestPreferences = await _storageService.loadUserPreferences();
-    if (latestPreferences.selectedCurrencyCodes.isNotEmpty) {
-      print('🔄 Updating with latest preferences: Base=${latestPreferences.baseCurrencyCode}, Selected=${latestPreferences.selectedCurrencyCodes.join(", ")}');
-      selectedCurrencyCodes = latestPreferences.selectedCurrencyCodes;
-      baseCurrencyCode = latestPreferences.baseCurrencyCode;
-      _baseCurrencyCode = baseCurrencyCode;
+    // Sort currency codes to ensure base currency is first
+    final sortedCodes = List<String>.from(currencyCodes);
+    if (_baseCurrencyCode.isNotEmpty) {
+      sortedCodes.remove(_baseCurrencyCode);
+      sortedCodes.insert(0, _baseCurrencyCode);
     }
     
-    // Try to load cached exchange rates
-    final cachedRates = await _storageService.loadExchangeRates();
-    if (cachedRates != null) {
-      _exchangeRates = cachedRates;
+    // Safety check - make sure we have loaded currencies
+    if (_allCurrencies.isEmpty) {
+      print('⚠️ No currencies loaded yet, loading them first');
+      await loadAllCurrencies();
+    }
+    
+    // Update selected currencies in the sorted order with safety check
+    try {
+      _selectedCurrencies = sortedCodes
+          .where((code) => _allCurrencies.any((c) => c.code == code))
+          .map((code) => _allCurrencies.firstWhere((c) => c.code == code))
+          .toList();
+      
+      print('✅ Selected currencies: ${_selectedCurrencies.map((c) => c.code).join(", ")}');
+    } catch (e) {
+      print('❌ Error setting up selected currencies: $e');
+      // Fallback to default currency or empty list
+      _selectedCurrencies = [];
+    }
+  }
+
+  // Private method to handle exchange rates initialization logic
+  Future<void> _initializeExchangeRates() async {
+    // If we already have exchange rates loaded from cache, no need to fetch
+    if (_exchangeRates != null) {
+      print('💱 Initializing all currencies with base currency');
+      _recalculateValuesFromCurrency(_baseCurrencyCode, 1.0);
+      return;
+    }
+    
+    // If we don't have rates yet, check if we can fetch them
+    final isPremium = _userPreferences?.isPremium ?? false;
+    final canRefreshToday = _userPreferences?.canRefreshRatesToday() ?? true;
+    
+    print('🔄 INITIAL RATES CHECK:');
+    print('   isPremium: $isPremium');
+    print('   canRefreshToday: $canRefreshToday');
+    print('   hasCachedRates: ${_exchangeRates != null}');
+    
+    // Premium users or users who haven't refreshed today can fetch fresh rates
+    if (isPremium || canRefreshToday) {
+      print('🔄 Fetching initial rates from API');
+      await fetchExchangeRates();
+    } else {
+      print('🔄 Free user cannot refresh today and no cached rates found');
+      // Show offline mode or error state
       _isOffline = true;
     }
-    
-    // Make sure we have the base currency in selected currencies
-    if (!selectedCurrencyCodes.contains(baseCurrencyCode)) {
-      selectedCurrencyCodes = [...selectedCurrencyCodes, baseCurrencyCode];
-    }
-    
-    // Ensure we have at least some currencies selected
-    if (selectedCurrencyCodes.isEmpty) {
-      selectedCurrencyCodes = [baseCurrencyCode];
-    }
-    
-    // Load all available currencies
-    await loadAllCurrencies();
-    
-    // Select currencies based on the provided codes
-    await selectCurrencies(selectedCurrencyCodes);
-    
-    // Always set base currency value to 1.0 and recalculate others
-    _recalculateValuesFromCurrency(_baseCurrencyCode, 1.0);
-    
-    // Make sure to notify listeners after everything is loaded
-    notifyListeners();
   }
 
   // Force a reload of selected currencies from user preferences
@@ -146,10 +247,59 @@ class CurrencyProvider with ChangeNotifier {
     notifyListeners();
     
     try {
-      _allCurrencies = await _apiService.fetchAvailableCurrencies();
+      // Check if we have cached rates first - we can extract currencies from there
+      final cachedRates = await _storageService.loadExchangeRates();
+      
+      if (cachedRates != null && cachedRates.rates.isNotEmpty) {
+        // Get proper currency metadata first
+        print('🔄 Fetching currency metadata for proper display');
+        final currencyMetadata = await _apiService.fetchAvailableCurrencies();
+        
+        // Create a lookup map for quick access to metadata
+        final metadataMap = {for (var c in currencyMetadata) c.code: c};
+        
+        // Extract currencies from cached rates with proper metadata
+        print('💾 Using cached rates with proper currency metadata');
+        
+        // Create currency objects from rates
+        _allCurrencies = cachedRates.rates.entries.map((entry) {
+          final code = entry.key.toUpperCase();
+          // Use metadata if available, otherwise fallback to basic info
+          if (metadataMap.containsKey(code)) {
+            final metadata = metadataMap[code]!;
+            return Currency(
+              code: code,
+              name: metadata.name,
+              symbol: metadata.symbol,
+              value: entry.value,
+              flagUrl: metadata.flagUrl
+            );
+          } else {
+            // Fallback if no metadata
+            return Currency(
+              code: code,
+              name: code,
+              symbol: code,
+              value: entry.value,
+              flagUrl: ''
+            );
+          }
+        }).toList();
+        
+        // Sort currencies alphabetically
+        _allCurrencies.sort((a, b) => a.code.compareTo(b.code));
+        
+        print('✅ Loaded ${_allCurrencies.length} currencies from cached rates with proper display data');
+      } else {
+        // If no cached rates, fetch from API
+        print('🌐 No cached rates available, fetching currencies from API');
+        _allCurrencies = await _apiService.fetchAvailableCurrencies();
+      }
+      
       _isLoadingAllCurrencies = false;
       notifyListeners();
     } catch (e) {
+      print('❌ Error loading currencies: $e');
       _error = 'Failed to load currencies: $e';
       _isLoadingAllCurrencies = false;
       _isOffline = true;
@@ -157,62 +307,81 @@ class CurrencyProvider with ChangeNotifier {
     }
   }
 
-  // Fetch latest exchange rates - NOTE: This method doesn't check refresh limits
+  // Fetch latest exchange rates for the base currency
   Future<bool> fetchExchangeRates() async {
+    print('\n📊 FETCH EXCHANGE RATES: Requesting latest rates from API for $_baseCurrencyCode');
     _isLoadingRates = true;
     _error = null;
     notifyListeners();
     
     try {
-      print('📊 FETCH EXCHANGE RATES: Requesting latest rates from API for $_baseCurrencyCode');
-      
       // Safety check - validate base currency code
       if (_baseCurrencyCode.isEmpty) {
         print('⚠️ Base currency code is empty, using USD as fallback');
         _baseCurrencyCode = 'USD';
       }
       
-      final rates = await _apiService.fetchExchangeRates(_baseCurrencyCode);
+      // Check if the user is premium or can refresh today before making the API call
+      final isPremium = _userPreferences?.isPremium ?? false;
+      final canRefreshToday = _userPreferences?.canRefreshRatesToday() ?? true;
       
-      // Validate the returned exchange rates
-      if (rates.rates.isEmpty) {
-        print('⚠️ API returned empty rates, using mock or cached data as fallback');
+      // Only make the actual API call if the user is premium or can refresh today
+      if (isPremium || canRefreshToday) {
+        final rates = await _apiService.fetchExchangeRates(_baseCurrencyCode);
+        
+        // Validate the returned exchange rates
+        if (rates.rates.isEmpty) {
+          print('⚠️ API returned empty rates, using cached data as fallback');
+          
+          // Try to load cached rates
+          final cachedRates = await _storageService.loadExchangeRates();
+          if (cachedRates != null) {
+            print('✅ Using cached exchange rates from: ${cachedRates.timestamp}');
+            _exchangeRates = cachedRates;
+          } else {
+            throw Exception('Failed to fetch exchange rates and no cached data available');
+          }
+        } else {
+          print('✅ Successfully received fresh exchange rates from API');
+          _exchangeRates = rates;
+          
+          _isOffline = false;
+          
+          // Save rates to storage
+          print('📊 FETCH EXCHANGE RATES: Saving fresh rates to storage');
+          await _storageService.saveExchangeRates(_exchangeRates!);
+          
+          // Update the last refresh time in user preferences - only when fresh rates are fetched
+          if (_userPreferences != null) {
+            final dateBeforeUpdate = _userPreferences?.lastRatesRefresh;
+            print('📊 FETCH EXCHANGE RATES: Updating last refresh time');
+            print('   BEFORE update: lastRatesRefresh = $dateBeforeUpdate');
+            
+            final updatedPrefs = _userPreferences!.copyWith(
+              lastRatesRefresh: DateTime.now(),
+            );
+            _userPreferences = updatedPrefs;
+            await _storageService.saveUserPreferences(updatedPrefs);
+            
+            print('   AFTER update: lastRatesRefresh = ${_userPreferences?.lastRatesRefresh}');
+            print('   VERIFY: canRefreshRatesToday = ${_userPreferences?.canRefreshRatesToday()}');
+          } else {
+            print('⚠️ Cannot update last refresh time: user preferences is null');
+          }
+        }
+      } else {
+        // Skip the API call for free users who already refreshed today
+        print('⏩ Skipping API call - free user already refreshed today');
         
         // Try to load cached rates
         final cachedRates = await _storageService.loadExchangeRates();
         if (cachedRates != null) {
           print('✅ Using cached exchange rates from: ${cachedRates.timestamp}');
           _exchangeRates = cachedRates;
+          _isOffline = true;
         } else {
-          throw Exception('Failed to fetch exchange rates and no cached data available');
+          throw Exception('No cached exchange rates available');
         }
-      } else {
-        print('✅ Successfully received exchange rates from API');
-        _exchangeRates = rates;
-      }
-      
-      _isOffline = false;
-      
-      // Save rates to storage
-      print('📊 FETCH EXCHANGE RATES: Saving rates to storage');
-      await _storageService.saveExchangeRates(_exchangeRates!);
-      
-      // Update the last refresh time in user preferences - this is crucial for the refresh limit
-      if (_userPreferences != null) {
-        final dateBeforeUpdate = _userPreferences?.lastRatesRefresh;
-        print('📊 FETCH EXCHANGE RATES: Updating last refresh time');
-        print('   BEFORE update: lastRatesRefresh = $dateBeforeUpdate');
-        
-        final updatedPrefs = _userPreferences!.copyWith(
-          lastRatesRefresh: DateTime.now(),
-        );
-        _userPreferences = updatedPrefs;
-        await _storageService.saveUserPreferences(updatedPrefs);
-        
-        print('   AFTER update: lastRatesRefresh = ${_userPreferences?.lastRatesRefresh}');
-        print('   VERIFY: canRefreshRatesToday = ${_userPreferences?.canRefreshRatesToday()}');
-      } else {
-        print('⚠️ Cannot update last refresh time: user preferences is null');
       }
       
       // Update the values of all selected currencies
@@ -554,10 +723,35 @@ class CurrencyProvider with ChangeNotifier {
   }
 
   // Set base currency
-  void setBaseCurrency(String currencyCode) {
+  void setBaseCurrency(String currencyCode) async {
+    print('🔄 Setting base currency to: $currencyCode (previous: $_baseCurrencyCode)');
+    
+    // Only update if actually changed
+    if (_baseCurrencyCode == currencyCode) {
+      print('⚠️ Base currency is already $currencyCode - no change needed');
+      return;
+    }
+    
     _baseCurrencyCode = currencyCode;
-    // We need to fetch new exchange rates for the new base currency
-    fetchExchangeRates();
+    
+    // Check if user is premium or can refresh today before fetching rates
+    final isPremium = _userPreferences?.isPremium ?? false;
+    final canRefreshToday = this.canRefreshRatesToday;
+    
+    print('🔄 BASE CURRENCY CHANGED CHECK:');
+    print('   isPremium: $isPremium');
+    print('   canRefreshToday: $canRefreshToday');
+    
+    // We need to fetch new exchange rates for the new base currency only if allowed
+    if (isPremium || canRefreshToday) {
+      print('🔄 User can fetch rates - requesting new rates for base currency $currencyCode');
+      await fetchExchangeRates();
+    } else {
+      print('🔄 Free user already refreshed today - using cached rates with recalculation');
+      // If we can't fetch, at least recalculate with existing rates
+      _recalculateValuesFromCurrency(_baseCurrencyCode, 1.0);
+      notifyListeners();
+    }
   }
 
   // Force reload user preferences to ensure refresh limit is accurate

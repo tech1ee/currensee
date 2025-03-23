@@ -17,75 +17,108 @@ class ApiService {
     }
     
     try {
+      print('🌐 API: Fetching available currencies from ${baseUrl}currencies.json');
       // First try the primary URL
       final response = await http.get(
         Uri.parse('${baseUrl}currencies.json'),
       ).timeout(const Duration(seconds: 10));
 
+      print('🌐 API: Primary URL response status: ${response.statusCode}');
+      
       if (response.statusCode == 200) {
-        return _parseCurrenciesResponse(response.body);
+        final currencies = _parseCurrenciesResponse(response.body);
+        print('✅ API: Successfully parsed ${currencies.length} currencies from primary URL');
+        return currencies;
       } 
       
       // If primary URL fails, try the fallback
+      print('⚠️ API: Primary URL failed, trying fallback ${fallbackUrl}currencies.json');
       final fallbackResponse = await http.get(
         Uri.parse('${fallbackUrl}currencies.json'),
       ).timeout(const Duration(seconds: 10));
       
+      print('🌐 API: Fallback URL response status: ${fallbackResponse.statusCode}');
+      
       if (fallbackResponse.statusCode == 200) {
-        return _parseCurrenciesResponse(fallbackResponse.body);
+        final currencies = _parseCurrenciesResponse(fallbackResponse.body);
+        print('✅ API: Successfully parsed ${currencies.length} currencies from fallback URL');
+        return currencies;
       }
       
       throw Exception('Failed to load currencies: ${response.statusCode}');
     } catch (e) {
-      print('Error fetching currencies: $e');
+      print('❌ Error fetching currencies: $e');
       throw Exception('Failed to fetch currencies: $e');
     }
   }
 
   // Helper method to parse currencies response
   List<Currency> _parseCurrenciesResponse(String responseBody) {
-    final Map<String, dynamic> data = json.decode(responseBody);
-    List<Currency> currencies = [];
+    try {
+      final Map<String, dynamic> data = json.decode(responseBody);
+      print('🔄 API: Parsing currencies response with ${data.length} entries');
+      List<Currency> currencies = [];
 
-    data.forEach((code, name) {
-      String flagUrl;
-      String upperCode = code.toUpperCase();
-      
-      // Special cases for flags
-      switch (upperCode) {
-        case 'EUR':
-          // Use EU flag from CountryFlags.io
-          flagUrl = 'https://flagcdn.com/w160/eu.png';
-          break;
-        case 'BTC':
-        case 'ETH':
-        case 'USDT':
-        case 'XRP':
-        case 'DOGE':
-          // Use cryptocurrency icon from CoinGecko
-          flagUrl = 'https://static.coingecko.com/s/thumbnail-${code.toLowerCase()}-64.png';
-          break;
-        default:
-          // For regular currencies, use country flag if code is 2-3 characters
-          if (code.length >= 2) {
-            String flagCode = code.substring(0, 2).toUpperCase();
-            // Use CountryFlags.io for better reliability and consistent sizing
-            flagUrl = 'https://flagcdn.com/w160/${flagCode.toLowerCase()}.png';
+      // Special case currency mappings for flags
+      final Map<String, String> specialFlagMappings = {
+        'EUR': 'eu', // European Union
+        'GBP': 'gb', // United Kingdom
+        'USD': 'us', // United States
+        'AUD': 'au', // Australia
+        'CAD': 'ca', // Canada
+        'NZD': 'nz', // New Zealand
+        'CHF': 'ch', // Switzerland
+        'JPY': 'jp', // Japan
+        'KZT': 'kz', // Kazakhstan
+        'UAH': 'ua', // Ukraine
+        'RUB': 'ru', // Russia
+        'AED': 'ae', // United Arab Emirates
+        'AKT': 'crypto', // Akash token (crypto)
+        'BTC': 'crypto', // Bitcoin (crypto)
+        'ETH': 'crypto', // Ethereum (crypto)
+        'USDT': 'crypto', // Tether (crypto)
+        'XRP': 'crypto', // Ripple (crypto)
+        'DOGE': 'crypto', // Dogecoin (crypto)
+      };
+
+      data.forEach((code, name) {
+        String flagUrl = '';
+        String upperCode = code.toUpperCase();
+        
+        // Handle special cases first
+        if (specialFlagMappings.containsKey(upperCode)) {
+          final flagCode = specialFlagMappings[upperCode]!;
+          
+          if (flagCode == 'crypto') {
+            // Use cryptocurrency icon 
+            flagUrl = 'https://static.coingecko.com/s/thumbnail-${code.toLowerCase()}-64.png';
           } else {
-            // Fallback for unknown currencies
-            flagUrl = '';
+            // Use country flag from flagcdn.com
+            flagUrl = 'https://flagcdn.com/w160/$flagCode.png';
           }
-      }
-      
-      currencies.add(Currency(
-        code: upperCode,
-        name: name.toString(),
-        symbol: _getCurrencySymbol(upperCode),
-        flagUrl: flagUrl,
-      ));
-    });
+        }
+        // Default case - try to derive flag from first 2 letters of currency code
+        else if (code.length >= 2) {
+          // Skip known non-country codes to avoid 404 errors
+          if (!['AK', 'XD', 'XC', 'ZR', 'XX'].contains(code.substring(0, 2).toUpperCase())) {
+            String flagCode = code.substring(0, 2).toLowerCase();
+            flagUrl = 'https://flagcdn.com/w160/$flagCode.png';
+          }
+        }
+        
+        currencies.add(Currency(
+          code: upperCode,
+          name: name.toString(),
+          symbol: _getCurrencySymbol(upperCode),
+          flagUrl: flagUrl,
+        ));
+      });
 
-    return currencies;
+      return currencies;
+    } catch (e) {
+      print('❌ Error parsing currencies: $e');
+      throw Exception('Failed to parse currencies: $e');
+    }
   }
 
   // Get currency symbol based on code
@@ -216,9 +249,28 @@ class ApiService {
       }
     });
     
+    // Check if there's a timestamp in the response
+    DateTime timestamp = DateTime.now();
+    
+    // Try to get the last-modified header from API response if available
+    // This is a more accurate representation of when the rates were published
+    if (data['time_last_update_unix'] != null) {
+      try {
+        // API provides timestamp in seconds, convert to milliseconds
+        final unixTimestamp = data['time_last_update_unix'];
+        if (unixTimestamp is int) {
+          timestamp = DateTime.fromMillisecondsSinceEpoch(unixTimestamp * 1000);
+          print('✅ Using API-provided timestamp: $timestamp');
+        }
+      } catch (e) {
+        print('⚠️ Error parsing API timestamp: $e');
+        // Keep default DateTime.now() timestamp
+      }
+    }
+    
     return ExchangeRates(
       base: baseCurrency.toUpperCase(),
-      timestamp: DateTime.now(),
+      timestamp: timestamp,
       rates: rates,
     );
   }
