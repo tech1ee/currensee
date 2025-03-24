@@ -115,6 +115,13 @@ class AdService {
     }
   }
 
+  // Show interstitial ad only for non-premium users
+  void showInterstitialAdIfNotPremium(bool isPremium) {
+    if (!isPremium) {
+      showInterstitialAd();
+    }
+  }
+
   // Dispose of any ads when done
   void dispose() {
     _interstitialAd?.dispose();

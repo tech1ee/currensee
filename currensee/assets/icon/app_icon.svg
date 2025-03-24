@@ -1,16 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
-  <rect width="1024" height="1024" rx="220" fill="#8FD584"/>
+  <!-- Background - muted teal to match theme -->
+  <rect width="1024" height="1024" rx="220" fill="#7A9E9F"/>
   
-  <!-- Exchange arrows -->
-  <g transform="translate(512, 512)" stroke="white" stroke-width="80" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Subtle gradient overlay for depth -->
+  <rect width="1024" height="1024" rx="220" fill="url(#paint0_linear)" fill-opacity="0.15"/>
+  
+  <!-- Exchange arrows - softer white -->
+  <g transform="translate(512, 512)" stroke="#F8F8F6" stroke-width="70" stroke-linecap="round" stroke-linejoin="round">
     <!-- Top arrow -->
-    <path d="M-200 -100 L200 -100"/>
-    <path d="M120 -180 L200 -100 L120 -20"/>
+    <path d="M-200 -100 L180 -100"/>
+    <path d="M100 -180 L180 -100 L100 -20"/>
     
     <!-- Bottom arrow -->
-    <path d="M200 100 L-200 100"/>
-    <path d="M-120 20 L-200 100 L-120 180"/>
+    <path d="M200 100 L-180 100"/>
+    <path d="M-100 20 L-180 100 L-100 180"/>
   </g>
+  
+  <!-- Subtle accent element -->
+  <circle cx="512" cy="512" r="320" stroke="#C2C5AA" stroke-width="12" stroke-opacity="0.3" fill="none"/>
+  
+  <!-- Define gradient -->
+  <defs>
+    <linearGradient id="paint0_linear" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#94B3B4"/>
+      <stop offset="1" stop-color="#5D7F80"/>
+    </linearGradient>
+  </defs>
 </svg> 

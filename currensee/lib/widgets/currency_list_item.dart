@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
-import '../models/currency.dart';
-import '../providers/currency_provider.dart';
 import 'dart:async';
+import '../models/currency.dart';
 
 class CurrencyListItem extends StatefulWidget {
   final Currency currency;
@@ -32,7 +29,6 @@ class CurrencyListItem extends StatefulWidget {
 
 class _CurrencyListItemState extends State<CurrencyListItem> {
   late TextEditingController _controller;
-  Timer? _updateDebouncer;
   bool _isEditing = false;
 
   @override
@@ -88,45 +84,43 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
           ? Theme.of(context).colorScheme.primary.withOpacity(0.08)
           : Colors.transparent,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: Theme.of(context).dividerColor.withOpacity(0.1),
-              width: 1,
+              color: Theme.of(context).dividerColor.withOpacity(0.12),
+              width: 0.5,
             ),
           ),
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             // Flag - Fixed width column
             SizedBox(
-              width: 36,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: widget.currency.flagUrl.isNotEmpty
-                    ? Image.network(
-                        widget.currency.flagUrl,
-                        width: 36,
-                        height: 24,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          print('❌ Error loading flag for ${widget.currency.code}: $error');
-                          return const Icon(Icons.flag, color: Colors.grey);
-                        },
-                      )
-                    : const Icon(Icons.flag, color: Colors.grey),
-              ),
+              width: 28,
+              height: 18,
+              child: widget.currency.flagUrl.isNotEmpty
+                  ? Image.network(
+                      widget.currency.flagUrl,
+                      width: 28,
+                      height: 18,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(Icons.flag, size: 18, color: Colors.grey);
+                      },
+                    )
+                  : const Icon(Icons.flag, size: 18, color: Colors.grey),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             // Currency code - Fixed width column
             SizedBox(
-              width: 60,
+              width: 45,
               child: Text(
                 widget.currency.code,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 14,
+                  fontSize: 12,
                   color: widget.isBaseCurrency 
                       ? Theme.of(context).colorScheme.primary
                       : Theme.of(context).textTheme.bodyLarge?.color,
@@ -138,7 +132,7 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
               child: Text(
                 widget.currency.name,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 11,
                   color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -148,68 +142,69 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
             // Value editor - Expanded width column for large numbers
             Expanded(
               flex: 2,
-              child: TextField(
-                controller: _controller,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                textAlign: TextAlign.right,
-                decoration: InputDecoration.collapsed(
-                  hintText: '',
-                  // Increase the content padding to make the field taller
-                  border: InputBorder.none,
+              child: Container(
+                height: 34,
+                alignment: Alignment.center,
+                child: TextField(
+                  controller: _controller,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textAlign: TextAlign.right,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    isCollapsed: true,
+                    contentPadding: EdgeInsets.zero,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                  ),
+                  style: TextStyle(
+                    fontSize: 24,
+                    height: 1,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.3,
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                  ),
+                  expands: false,
+                  maxLines: 1,
+                  minLines: 1,
+                  inputFormatters: [
+                    LengthLimitingTextInputFormatter(15),
+                  ],
+                  onTap: () {
+                    setState(() {
+                      _isEditing = true;
+                    });
+                    widget.onEditStart();
+                  },
+                  onChanged: (value) {
+                    value = value.replaceAll(RegExp(r'[^\d\.]'), '');
+                    
+                    final parts = value.split('.');
+                    if (parts.length > 2) {
+                      value = '${parts[0]}.${parts.sublist(1).join('')}';
+                    }
+                    
+                    double newValue = double.tryParse(value) ?? 0;
+                    
+                    widget.onValueChanged(widget.currency.code, newValue);
+                    
+                    _updateControllerText();
+                  },
+                  onEditingComplete: () {
+                    setState(() {
+                      _isEditing = false;
+                    });
+                    _updateControllerText();
+                    widget.onEditEnd();
+                  },
+                  onSubmitted: (_) {
+                    setState(() {
+                      _isEditing = false;
+                    });
+                    _updateControllerText();
+                    widget.onEditEnd();
+                  },
                 ),
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: -0.3,
-                  color: Theme.of(context).textTheme.bodyLarge?.color,
-                ),
-                // Make sure field takes full height of the parent container
-                expands: false,
-                maxLines: 1,
-                minLines: 1,
-                // Ensure the input field has sufficient height
-                inputFormatters: [
-                  LengthLimitingTextInputFormatter(15), // Limit input length
-                ],
-                onTap: () {
-                  setState(() {
-                    _isEditing = true;
-                  });
-                  widget.onEditStart();
-                },
-                onChanged: (value) {
-                  // Clean the input value - remove any non-numeric characters except decimal point
-                  value = value.replaceAll(RegExp(r'[^\d\.]'), '');
-                  
-                  // Ensure only one decimal point
-                  final parts = value.split('.');
-                  if (parts.length > 2) {
-                    value = '${parts[0]}.${parts.sublist(1).join('')}';
-                  }
-                  
-                  // Convert to double, defaulting to 0 if invalid
-                  double newValue = double.tryParse(value) ?? 0;
-                  
-                  // Update the value in the provider
-                  widget.onValueChanged(widget.currency.code, newValue);
-                  
-                  // Update the controller text immediately
-                  _updateControllerText();
-                },
-                onEditingComplete: () {
-                  setState(() {
-                    _isEditing = false;
-                  });
-                  _updateControllerText();
-                  widget.onEditEnd();
-                },
-                onSubmitted: (_) {
-                  setState(() {
-                    _isEditing = false;
-                  });
-                  _updateControllerText();
-                  widget.onEditEnd();
-                },
               ),
             ),
           ],
@@ -220,7 +215,6 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
 
   @override
   void dispose() {
-    _updateDebouncer?.cancel();
     _controller.dispose();
     super.dispose();
   }

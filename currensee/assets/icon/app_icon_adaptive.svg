@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Exchange arrows - softer white -->
+  <g transform="translate(512, 512)" stroke="#F8F8F6" stroke-width="80" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Top arrow -->
+    <path d="M-200 -100 L180 -100"/>
+    <path d="M100 -180 L180 -100 L100 -20"/>
+    
+    <!-- Bottom arrow -->
+    <path d="M200 100 L-180 100"/>
+    <path d="M-100 20 L-180 100 L-100 180"/>
+  </g>
+  
+  <!-- Subtle accent element -->
+  <circle cx="512" cy="512" r="320" stroke="#F8F8F6" stroke-width="15" stroke-opacity="0.6" fill="none"/>
+</svg> 

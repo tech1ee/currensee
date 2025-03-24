@@ -240,8 +240,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     }
     
-    // Show interstitial ad occasionally
-    _adService.showInterstitialAd();
+    // Show interstitial ad only for non-premium users
+    _adService.showInterstitialAdIfNotPremium(userPrefs.isPremium);
 
     // Navigate to the currencies screen
     await Navigator.push(
@@ -786,31 +786,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               bottom: 0,
               child: AdBannerWidget(isPremium: userPrefs.isPremium),
             ),
-            
-            // Offline indicator
-            if (isOffline)
-              Positioned(
-                top: 8,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withOpacity(0.8),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      'Offline Mode - Using cached rates',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
           ],
         ),
       ),

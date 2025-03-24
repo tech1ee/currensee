@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../services/ad_service.dart';
+import '../utils/debug_constants.dart';
 
 class AdBannerWidget extends StatefulWidget {
   final bool isPremium;
@@ -53,9 +54,12 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
             _isAdLoaded = true;
           });
         },
-        onAdFailedToLoad: (ad, error) {
-          print('Ad failed to load: $error');
+        onAdFailedToLoad: (Ad ad, LoadAdError error) {
           ad.dispose();
+          AppLogger.error('Ad failed to load', error);
+          setState(() {
+            _bannerAd = null;
+          });
         },
       ),
     );
