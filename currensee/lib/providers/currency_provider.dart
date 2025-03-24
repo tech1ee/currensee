@@ -143,8 +143,12 @@ class CurrencyProvider with ChangeNotifier {
     
     // Sort currency codes to ensure base currency is first
     final sortedCodes = List<String>.from(currencyCodes);
+    
+    // Always make sure base currency is included and at the top
     if (_baseCurrencyCode.isNotEmpty) {
+      // First remove it if it exists elsewhere in the list
       sortedCodes.remove(_baseCurrencyCode);
+      // Then add it at the beginning
       sortedCodes.insert(0, _baseCurrencyCode);
     }
     
@@ -207,8 +211,12 @@ class CurrencyProvider with ChangeNotifier {
     
     // Sort currency codes to ensure base currency is first
     final sortedCodes = List<String>.from(currencyCodes);
+    
+    // Always make sure base currency is included and at the top
     if (baseCurrencyCode.isNotEmpty) {
+      // First remove it if it exists elsewhere in the list
       sortedCodes.remove(baseCurrencyCode);
+      // Then add it at the beginning
       sortedCodes.insert(0, baseCurrencyCode);
     }
     
@@ -482,8 +490,12 @@ class CurrencyProvider with ChangeNotifier {
     
     // Sort currency codes to ensure base currency is first
     final sortedCodes = List<String>.from(currencyCodes);
+    
+    // Always make sure base currency is included and at the top
     if (baseCurrencyCode.isNotEmpty) {
+      // First remove it if it exists elsewhere in the list
       sortedCodes.remove(baseCurrencyCode);
+      // Then add it at the beginning
       sortedCodes.insert(0, baseCurrencyCode);
     }
     

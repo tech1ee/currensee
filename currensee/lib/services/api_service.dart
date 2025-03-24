@@ -79,6 +79,19 @@ class ApiService {
         'USDT': 'crypto', // Tether (crypto)
         'XRP': 'crypto', // Ripple (crypto)
         'DOGE': 'crypto', // Dogecoin (crypto)
+        'TRX': 'crypto', // TRON (crypto)
+        'ADA': 'crypto', // Cardano (crypto)
+        'SOL': 'crypto', // Solana (crypto)
+        'DOT': 'crypto', // Polkadot (crypto)
+        'AVAX': 'crypto', // Avalanche (crypto)
+        'MATIC': 'crypto', // Polygon (crypto)
+        'LINK': 'crypto', // Chainlink (crypto)
+        'UNI': 'crypto', // Uniswap (crypto)
+        'ATOM': 'crypto', // Cosmos (crypto)
+        'LTC': 'crypto', // Litecoin (crypto)
+        'WAVES': 'crypto', // Waves (crypto)
+        'WEMIX': 'crypto', // Wemix (crypto)
+        'WOO': 'crypto', // WOO Network (crypto)
       };
 
       data.forEach((code, name) {
@@ -90,8 +103,17 @@ class ApiService {
           final flagCode = specialFlagMappings[upperCode]!;
           
           if (flagCode == 'crypto') {
-            // Use cryptocurrency icon 
+            // Use cryptocurrency icon from CoinGecko
             flagUrl = 'https://static.coingecko.com/s/thumbnail-${code.toLowerCase()}-64.png';
+            
+            // Additionally set a generic crypto fallback URL for the error handler
+            // This never gets used directly - it's for tracking that this is a crypto
+            // and will be handled by the error builder in the UI
+            if (upperCode.startsWith('X') || 
+                ['TRX', 'BTC', 'ETH', 'USDT', 'XRP', 'DOGE', 'ADA', 'SOL'].contains(upperCode)) {
+                // This is almost certainly a cryptocurrency
+                flagUrl = 'crypto://$upperCode';
+            }
           } else {
             // Use country flag from flagcdn.com
             flagUrl = 'https://flagcdn.com/w160/$flagCode.png';

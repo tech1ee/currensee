@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import '../models/currency.dart';
+import 'currency_flag_placeholder.dart';
 
 class CurrencyListItem extends StatefulWidget {
   final Currency currency;
@@ -107,15 +108,21 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
                       height: 18,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
-                        return const Icon(Icons.flag, size: 18, color: Colors.grey);
+                        return CurrencyFlagPlaceholder(
+                          size: 28,
+                          currencyCode: widget.currency.code,
+                        );
                       },
                     )
-                  : const Icon(Icons.flag, size: 18, color: Colors.grey),
+                  : CurrencyFlagPlaceholder(
+                      size: 28,
+                      currencyCode: widget.currency.code,
+                    ),
             ),
             const SizedBox(width: 12),
             // Currency code - Fixed width column
             SizedBox(
-              width: 45,
+              width: 40,
               child: Text(
                 widget.currency.code,
                 style: TextStyle(
@@ -127,8 +134,9 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
                 ),
               ),
             ),
-            // Currency name - Flexible width column
+            // Currency name - Flexible width column but with smaller flex
             Expanded(
+              flex: 1,
               child: Text(
                 widget.currency.name,
                 style: TextStyle(
@@ -139,12 +147,12 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
               ),
             ),
             const SizedBox(width: 8),
-            // Value editor - Expanded width column for large numbers
+            // Value editor - Increased flex for wider display
             Expanded(
-              flex: 2,
+              flex: 3,
               child: Container(
                 height: 34,
-                alignment: Alignment.center,
+                alignment: Alignment.centerRight,
                 child: TextField(
                   controller: _controller,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -168,7 +176,7 @@ class _CurrencyListItemState extends State<CurrencyListItem> {
                   maxLines: 1,
                   minLines: 1,
                   inputFormatters: [
-                    LengthLimitingTextInputFormatter(15),
+                    LengthLimitingTextInputFormatter(20), // Increased character limit
                   ],
                   onTap: () {
                     setState(() {

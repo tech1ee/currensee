@@ -112,6 +112,17 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
     List<String> newSelectionList = List.from(_selectedCurrencies);
     
     if (newSelectionList.contains(currencyCode)) {
+      // Don't allow removing the base currency
+      if (currencyCode == _baseCurrencyCode) {
+        setState(() {
+          _isSaving = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cannot remove base currency')),
+        );
+        return;
+      }
+      
       // Remove currency
       newSelectionList.remove(currencyCode);
       print('Removed currency: $currencyCode, selected: ${newSelectionList.join(", ")}');
@@ -423,7 +434,20 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
           }
         }
         
-        return true;
+        // Confirm back navigation is allowed
+        final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+        
+        // If in initial setup but setup is complete, go to home screen instead
+        if (!widget.isInitialSetup || userPrefs.hasCompletedInitialSetup) {
+          return true; // Allow regular back navigation
+        } else {
+          // This should rarely happen - but just in case, navigate to home screen
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+            (route) => false,
+          );
+          return false; // Don't perform default back action since we're handling navigation
+        }
       },
       child: Scaffold(
         appBar: AppBar(
@@ -492,7 +516,18 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
                 }
               }
               
-              Navigator.of(context).pop();
+              // If in initial setup mode and user manually added a back button,
+              // navigate to HomeScreen to prevent going back to setup
+              if (userPrefs.hasCompletedInitialSetup) {
+                Navigator.of(context).pop();
+              } else {
+                // If we somehow get here during initial setup but with the back button,
+                // go to HomeScreen and clear navigation stack
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const HomeScreen()),
+                  (route) => false,
+                );
+              }
             },
           ),
           actions: [

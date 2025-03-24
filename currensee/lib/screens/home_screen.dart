@@ -243,10 +243,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // Show interstitial ad only for non-premium users
     _adService.showInterstitialAdIfNotPremium(userPrefs.isPremium);
 
-    // Navigate to the currencies screen
+    // Navigate to the currencies screen with isInitialSetup explicitly set to false
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const CurrenciesScreen()),
+      MaterialPageRoute(builder: (context) => const CurrenciesScreen(isInitialSetup: false)),
     );
     
     if (!mounted) return;
@@ -548,7 +548,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         const SizedBox(width: 16),
                         // Currency code column
                         SizedBox(
-                          width: 60,
+                          width: 55,
                           child: Text(
                             'Code',
                             style: TextStyle(
@@ -561,7 +561,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                         // Currency name column
                         Expanded(
-                          flex: 2,
+                          flex: 1,
                           child: Text(
                             'Currency',
                             style: TextStyle(
@@ -573,8 +573,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                         ),
                         // Value column
-                        SizedBox(
-                          width: 120,
+                        Expanded(
+                          flex: 3,
                           child: Text(
                             'Value',
                             textAlign: TextAlign.right,
@@ -653,6 +653,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           children: [
                             Expanded(
                               child: ReorderableListView.builder(
+                                buildDefaultDragHandles: false, // Disable default drag handles
                                 itemCount: currencyProvider.selectedCurrencies.length + 1,
                                 padding: EdgeInsets.zero,
                                 proxyDecorator: (child, index, animation) {
@@ -745,29 +746,45 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     );
                                   }
 
-                                  // Get the sorted currencies with base currency at the top
-                                  final currencies = List.of(currencyProvider.selectedCurrencies);
-                                  final baseIndex = currencies.indexWhere((c) => c.code == userPrefs.baseCurrencyCode);
-                                  if (baseIndex > 0) {
-                                    final baseCurrency = currencies.removeAt(baseIndex);
-                                    currencies.insert(0, baseCurrency);
-                                  }
-                                  
-                                  final currency = currencies[index];
+                                  // Get the currency for this index
+                                  final currency = currencyProvider.selectedCurrencies[index];
                                   final isBaseCurrency = currency.code == userPrefs.baseCurrencyCode;
                                   
-                                  return ReorderableDragStartListener(
-                                    key: ValueKey('draggable_${currency.code}'),
-                                    index: index,
-                                    enabled: !isBaseCurrency,
-                                    child: CurrencyListItem(
-                                      currency: currency,
-                                      onValueChanged: (code, value) => currencyProvider.updateCurrencyValue(code, value),
-                                      isBaseCurrency: isBaseCurrency,
-                                      isEditing: currencyProvider.currentlyEditedCurrencyCode == currency.code,
-                                      onEditStart: () => currencyProvider.setCurrentlyEditedCurrencyCode(currency.code),
-                                      onEditEnd: () => currencyProvider.clearCurrentlyEditedCurrencyCode(),
-                                      index: index,
+                                  return Container(
+                                    key: ValueKey('currency_${currency.code}'),
+                                    child: Row(
+                                      children: [
+                                        // Add a dedicated drag handle that only appears for non-base currencies
+                                        if (!isBaseCurrency)
+                                          ReorderableDragStartListener(
+                                            index: index,
+                                            child: Container(
+                                              width: 40,
+                                              height: 48, // Make sure height is defined
+                                              color: Colors.transparent,
+                                              child: Icon(
+                                                Icons.drag_handle_rounded,
+                                                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                                                size: 18,
+                                              ),
+                                            ),
+                                          )
+                                        else
+                                          const SizedBox(width: 40),
+                                        
+                                        // The actual currency item takes up the rest of the space
+                                        Expanded(
+                                          child: CurrencyListItem(
+                                            currency: currency,
+                                            onValueChanged: (code, value) => currencyProvider.updateCurrencyValue(code, value),
+                                            isBaseCurrency: isBaseCurrency,
+                                            isEditing: currencyProvider.currentlyEditedCurrencyCode == currency.code,
+                                            onEditStart: () => currencyProvider.setCurrentlyEditedCurrencyCode(currency.code),
+                                            onEditEnd: () => currencyProvider.clearCurrentlyEditedCurrencyCode(),
+                                            index: index,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   );
                                 },
