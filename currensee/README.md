@@ -125,3 +125,35 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Exchange rate data provided by [Exchange Rate API]
 - Flag images from [Country Flags API]
 - Icons from [Material Design Icons]
+
+## Setup Instructions
+
+### Firebase Configuration
+
+This project uses Firebase for Crashlytics and Analytics. Before running the app, you need to set up your own Firebase project:
+
+1. Create a new Firebase project at [firebase.google.com](https://firebase.google.com)
+2. Add Android, iOS, and web apps to your Firebase project
+3. Download the configuration files:
+   - `google-services.json` for Android
+   - `GoogleService-Info.plist` for iOS/macOS
+4. Place these files in their respective directories:
+   - Android: `android/app/google-services.json`
+   - iOS: `ios/Runner/GoogleService-Info.plist`
+   - macOS: `macos/Runner/GoogleService-Info.plist`
+5. Run `flutterfire configure` to generate your own `firebase_options.dart` file
+
+Note: The Firebase configuration files (`google-services.json` and `GoogleService-Info.plist`) as well as API keys should never be committed to version control. These files have been added to the `.gitignore` file.
+
+### Development Environment
+
+1. Clone the repository
+2. Make sure to follow the Firebase Configuration steps above
+3. Run `flutter pub get` to install dependencies
+4. Run `flutter run` to start the app
+
+## Security Notes
+
+- The `firebase_options.dart` file in the repository contains Firebase API keys, but these are safe to include in public repositories as they require additional security rules on the Firebase console to secure your data
+- For production deployments, ensure proper Firebase security rules are configured
+- Any additional API keys should be stored in environment variables or a secure storage solution, not hardcoded in the app

@@ -43,3 +43,25 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Firebase configuration files
+google-services.json
+GoogleService-Info.plist
+**/android/app/google-services.json
+**/ios/Runner/GoogleService-Info.plist
+**/macos/Runner/GoogleService-Info.plist
+
+# Local configuration file (e.g. for API keys that shouldn't be in VCS)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Keystore files
+*.jks
+*.keystore
+key.properties
+
+# Firebase configuration
+lib/firebase_options.dart
