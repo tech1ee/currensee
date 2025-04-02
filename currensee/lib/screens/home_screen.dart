@@ -1110,6 +1110,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                             onEditEnd: () => currencyProvider.clearCurrentlyEditedCurrencyCode(),
                                             onTap: () => _handleCurrencyTap(currency),
                                             isSelected: false,
+                                            showDragHandle: false,
                                           ),
                                         ),
                                       ],

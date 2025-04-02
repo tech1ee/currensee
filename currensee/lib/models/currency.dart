@@ -4,6 +4,7 @@ class Currency {
   final String symbol;
   double value;
   final String flagUrl;
+  bool hasValidRate;
 
   Currency({
     required this.code,
@@ -11,6 +12,7 @@ class Currency {
     required this.symbol,
     this.value = 1.0,
     required this.flagUrl,
+    this.hasValidRate = true,
   });
 
   Currency copyWith({
@@ -19,6 +21,7 @@ class Currency {
     String? symbol,
     double? value,
     String? flagUrl,
+    bool? hasValidRate,
   }) {
     return Currency(
       code: code ?? this.code,
@@ -26,6 +29,7 @@ class Currency {
       symbol: symbol ?? this.symbol,
       value: value ?? this.value,
       flagUrl: flagUrl ?? this.flagUrl,
+      hasValidRate: hasValidRate ?? this.hasValidRate,
     );
   }
 
@@ -36,6 +40,7 @@ class Currency {
       symbol: json['symbol'] ?? '',
       value: json['value']?.toDouble() ?? 1.0,
       flagUrl: json['flagUrl'] ?? '',
+      hasValidRate: json['hasValidRate'] ?? true,
     );
   }
 
@@ -46,11 +51,12 @@ class Currency {
       'symbol': symbol,
       'value': value,
       'flagUrl': flagUrl,
+      'hasValidRate': hasValidRate,
     };
   }
 
   @override
   String toString() {
-    return 'Currency(code: $code, name: $name, symbol: $symbol, value: $value, flagUrl: $flagUrl)';
+    return 'Currency(code: $code, name: $name, symbol: $symbol, value: $value, flagUrl: $flagUrl, hasValidRate: $hasValidRate)';
   }
 } 

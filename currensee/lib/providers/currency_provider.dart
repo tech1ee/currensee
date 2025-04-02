@@ -875,31 +875,27 @@ class CurrencyProvider with ChangeNotifier {
           .toList();
       
       // VERIFICATION: Check base currency is at the top of selected currencies
-      if (_selectedCurrencies.isNotEmpty && baseCurrencyCode.isNotEmpty) {
-        if (_selectedCurrencies.first.code != baseCurrencyCode) {
-          print('⚠️ ERROR: Base currency not at first position after selection!');
-          // Try to fix the order one more time
-          final baseCurrencyIndex = _selectedCurrencies.indexWhere((c) => c.code == baseCurrencyCode);
-          if (baseCurrencyIndex >= 0) {
-            final baseCurrency = _selectedCurrencies.removeAt(baseCurrencyIndex);
-            _selectedCurrencies.insert(0, baseCurrency);
-            print('✅ Fixed: Base currency moved to first position');
-          } else {
-            print('⚠️ CRITICAL ERROR: Base currency missing from selected currencies!');
-            // Try to add it if possible
-            final baseCurrency = _allCurrencies.firstWhere(
-              (c) => c.code == baseCurrencyCode,
-              orElse: () => Currency(
-                code: baseCurrencyCode,
-                name: 'Unknown Currency',
-                value: 1.0,
-                symbol: '',
-                flagUrl: ''
-              )
-            );
+      if (_selectedCurrencies.isNotEmpty && 
+          baseCurrencyCode.isNotEmpty &&
+          _selectedCurrencies[0].code != baseCurrencyCode) {
+        print('⚠️ Base currency not at top after mapping! Re-verifying...');
+        
+        // Check if the base currency is in the list
+        final baseIndex = _selectedCurrencies.indexWhere((c) => c.code == baseCurrencyCode);
+        if (baseIndex == -1) {
+          // Base currency not found, try to add it
+          try {
+            final baseCurrency = _allCurrencies.firstWhere((c) => c.code == baseCurrencyCode);
             _selectedCurrencies.insert(0, baseCurrency);
             print('✅ Added missing base currency to selected currencies');
+          } catch (e) {
+            print('❌ Error finding base currency in all currencies: $e');
           }
+        } else if (baseIndex > 0) {
+          // Base currency found but not at index 0, move it there
+          final baseCurrency = _selectedCurrencies.removeAt(baseIndex);
+          _selectedCurrencies.insert(0, baseCurrency);
+          print('✅ Moved base currency to the top of the list');
         }
       }
       
@@ -909,6 +905,26 @@ class CurrencyProvider with ChangeNotifier {
         for (var currency in _selectedCurrencies) {
           if (currentValues.containsKey(currency.code)) {
             currency.value = currentValues[currency.code]!;
+            print('💰 Restored value for ${currency.code}: ${currency.value}');
+          }
+        }
+        
+        // CRITICAL FIX: Make sure base currency value is properly preserved
+        if (baseCurrencyCode.isNotEmpty) {
+          final baseIndex = _selectedCurrencies.indexWhere((c) => c.code == baseCurrencyCode);
+          if (baseIndex >= 0) {
+            // Check if we have a stored value for the base currency
+            if (currentValues.containsKey(baseCurrencyCode)) {
+              final baseValue = currentValues[baseCurrencyCode];
+              if (baseValue != null && baseValue > 0) {
+                _selectedCurrencies[baseIndex].value = baseValue;
+                print('💰 Ensured base currency ${baseCurrencyCode} value is preserved: ${baseValue}');
+              } else {
+                // If no valid value, set to standard 1.0
+                _selectedCurrencies[baseIndex].value = 1.0;
+                print('💰 Set default value 1.0 for base currency ${baseCurrencyCode}');
+              }
+            }
           }
         }
       }
@@ -1079,19 +1095,32 @@ class CurrencyProvider with ChangeNotifier {
         print('✅ Added base currency $_baseCurrencyCode to selected currencies');
       }
 
+      // Create a list to track currencies with missing rates for reporting
+      final List<String> missingRates = [];
+
       // Set all selected currency values based on the exchange rates
       for (final currency in _selectedCurrencies) {
         if (currency.code == _baseCurrencyCode) {
+          // Base currency is always worth 1.0 of itself
           currency.value = 1.0;
+          currency.hasValidRate = true;
         } else {
           final rate = _exchangeRates!.rates[currency.code.toUpperCase()];
           if (rate != null) {
             currency.value = rate;
+            currency.hasValidRate = true;
           } else {
             print('⚠️ Missing rate for ${currency.code}');
-            currency.value = 1.0; // Default if not found
+            // Set a special value to indicate missing rate
+            currency.value = -1.0;
+            currency.hasValidRate = false;
+            missingRates.add(currency.code);
           }
         }
+      }
+      
+      if (missingRates.isNotEmpty) {
+        print('⚠️ Rates unavailable for: ${missingRates.join(", ")}');
       }
       
       print('📊 Recalculated values based on exchange rates');

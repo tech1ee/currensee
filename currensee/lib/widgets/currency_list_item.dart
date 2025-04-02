@@ -18,6 +18,8 @@ class CurrencyListItem extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback onEditStart;
   final VoidCallback onEditEnd;
+  final bool showDragHandle;
+  final VoidCallback? onMorePressed;
 
   const CurrencyListItem({
     super.key,
@@ -29,6 +31,8 @@ class CurrencyListItem extends StatefulWidget {
     required this.isEditing,
     required this.onEditStart,
     required this.onEditEnd,
+    required this.showDragHandle,
+    this.onMorePressed,
   });
 
   @override
@@ -284,23 +288,63 @@ class _CurrencyListItemState extends State<CurrencyListItem> with WidgetsBinding
               // Currency value
               Expanded(
                 flex: 3,
-                child: TextField(
-                  controller: _controller,
-                  focusNode: _focusNode,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  textAlign: TextAlign.right,
-                  decoration: const InputDecoration(
-                    hintText: '0.00',
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  onChanged: _handleTextChanged,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: widget.isBaseCurrency ? FontWeight.w600 : FontWeight.w400,
+                child: widget.currency.hasValidRate
+                  ? TextField(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      textAlign: TextAlign.right,
+                      decoration: const InputDecoration(
+                        hintText: '0.00',
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      onChanged: _handleTextChanged,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: widget.isBaseCurrency 
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).textTheme.bodyLarge?.color,
+                      ),
+                    )
+                  : Text(
+                      "Rate unavailable",
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontStyle: FontStyle.italic,
+                        color: Theme.of(context).colorScheme.error.withOpacity(0.8),
+                      ),
+                    ),
+              ),
+              
+              // Drag handle
+              if (widget.showDragHandle && !widget.isBaseCurrency) ...[
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.drag_handle,
+                  size: 20,
+                  color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.3),
+                ),
+              ],
+              
+              // More button if provided
+              if (widget.onMorePressed != null) ...[
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: widget.onMorePressed,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4.0),
+                    child: Icon(
+                      Icons.more_vert,
+                      size: 18,
+                      color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.5),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
