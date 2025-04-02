@@ -960,16 +960,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   );
                                 },
                                 onReorder: (oldIndex, newIndex) {
-                                  // Don't allow reordering the "Add Currency" button
-                                  if (oldIndex >= currencyProvider.selectedCurrencies.length ||
-                                      newIndex > currencyProvider.selectedCurrencies.length) {
+                                  // Additional debugging
+                                  print('🔍 REORDER: oldIndex=$oldIndex, newIndex=$newIndex');
+                                  print('🔍 Before reordering:');
+                                  print('🔍   Selected currencies: ${currencyProvider.selectedCurrencies.map((c) => c.code).join(", ")}');
+                                  print('🔍   Base currency: ${userPrefs.baseCurrencyCode}');
+                                  print('🔍   Current display indices: oldIndex=$oldIndex, newIndex=$newIndex, max=${currencyProvider.selectedCurrencies.length}');
+                                  
+                                  // Handle "Add Currency" button which is always at the end
+                                  if (oldIndex == currencyProvider.selectedCurrencies.length || 
+                                      newIndex == currencyProvider.selectedCurrencies.length) {
+                                    print('⚠️ Cannot reorder the "Add Currency" button');
                                     return;
                                   }
 
-                                  // Get current order and values
                                   final currencies = currencyProvider.selectedCurrencies;
                                   
-                                  // Always keep base currency at index 0
+                                  // Always keep base currency at index 0 (disallow moving it or replacing it)
                                   if (oldIndex == 0 || newIndex == 0) {
                                     print('🔒 Base currency must stay at the top');
                                     return;
@@ -985,20 +992,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
                                   // Create new order - MAKE SURE TO INCLUDE THE BASE CURRENCY
                                   final List<String> newOrder = currencies.map((c) => c.code).toList();
+                                  print('🔍 Original order: ${newOrder.join(", ")}');
+                                  
                                   final item = newOrder.removeAt(oldIndex);
                                   newOrder.insert(actualNewIndex, item);
+                                  print('🔍 After reordering: ${newOrder.join(", ")}');
                                   
                                   // CRITICAL FIX: Ensure base currency is in the list and at position 0
                                   final baseCurrency = userPrefs.baseCurrencyCode;
                                   if (baseCurrency.isNotEmpty) {
-                                    // Remove base currency if it exists elsewhere in the list
-                                    newOrder.remove(baseCurrency);
-                                    // Insert it at the beginning
-                                    newOrder.insert(0, baseCurrency);
+                                    // Check if base currency is already in the list
+                                    if (!newOrder.contains(baseCurrency)) {
+                                      print('⚠️ CRITICAL: Base currency $baseCurrency is missing from list! Adding it.');
+                                      newOrder.insert(0, baseCurrency);
+                                    } else if (newOrder.indexOf(baseCurrency) != 0) {
+                                      print('⚠️ Base currency not at first position! Moving it to the top.');
+                                      // Remove base currency if it exists elsewhere in the list
+                                      newOrder.remove(baseCurrency);
+                                      // Insert it at the beginning
+                                      newOrder.insert(0, baseCurrency);
+                                    }
                                     print('📌 Ensured base currency $baseCurrency is at the top after reordering');
                                   }
 
-                                  print('📝 Reordering currencies: ${newOrder.join(", ")}');
+                                  print('📝 Final currency order: ${newOrder.join(", ")}');
                                   
                                   // Update order in preferences and provider
                                   userPrefs.setInitialCurrencies(
@@ -1010,6 +1027,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   currencyProvider.selectCurrencies(newOrder, shouldRecalculate: false);
                                 },
                                 itemBuilder: (context, index) {
+                                  // Debug the current state of currencies
+                                  print('Building currency item at index $index. Total currencies: ${currencyProvider.selectedCurrencies.length}');
+                                  print('Current currency codes: ${currencyProvider.selectedCurrencies.map((c) => c.code).join(", ")}');
+                                  print('Base currency code: ${userPrefs.baseCurrencyCode}');
+                                  
                                   // If this is the last index, show the add button
                                   if (index == currencyProvider.selectedCurrencies.length) {
                                     return Container(

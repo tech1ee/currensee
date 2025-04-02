@@ -222,11 +222,16 @@ class _CurrencyListItemState extends State<CurrencyListItem> with WidgetsBinding
                     color: Theme.of(context).dividerColor.withOpacity(0.2),
                     width: 1,
                   ),
-                  image: DecorationImage(
-                    image: NetworkImage(widget.currency.flagUrl),
-                    fit: BoxFit.cover,
-                  ),
                 ),
+                child: widget.currency.flagUrl.isNotEmpty && widget.currency.flagUrl.startsWith('http')
+                  ? Image.network(
+                      widget.currency.flagUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return CurrencyFlagPlaceholder(currencyCode: widget.currency.code);
+                      },
+                    )
+                  : CurrencyFlagPlaceholder(currencyCode: widget.currency.code),
               ),
               
               // Currency code and name with base indicator
