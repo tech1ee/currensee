@@ -22,8 +22,12 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   @override
   void initState() {
     super.initState();
+    debugPrint('🧩 Ad Banner initState - isPremium: ${widget.isPremium}');
     if (!widget.isPremium) {
+      debugPrint('🧩 User is NOT premium, loading ad...');
       _loadBannerAd();
+    } else {
+      debugPrint('🧩 User IS premium, skipping ad load');
     }
   }
 
@@ -33,41 +37,55 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
     
     // If user upgraded to premium, dispose of the ad
     if (widget.isPremium && !oldWidget.isPremium) {
+      debugPrint('🧩 User upgraded to premium, disposing ad');
       _disposeAd();
     }
     
     // If user downgraded from premium, load the ad
     if (!widget.isPremium && oldWidget.isPremium) {
+      debugPrint('🧩 User downgraded from premium, loading ad');
       _loadBannerAd();
     }
   }
 
   void _loadBannerAd() {
-    final adService = AdService();
-    _bannerAd = BannerAd(
-      adUnitId: adService.testBannerAdUnitId,
-      size: AdSize.mediumRectangle, // Bigger ad size (300x250)
-      request: const AdRequest(),
-      listener: BannerAdListener(
-        onAdLoaded: (ad) {
-          setState(() {
-            _isAdLoaded = true;
-          });
-        },
-        onAdFailedToLoad: (Ad ad, LoadAdError error) {
-          ad.dispose();
-          AppLogger.error('Ad failed to load', error);
-          setState(() {
-            _bannerAd = null;
-          });
-        },
-      ),
-    );
+    try {
+      debugPrint('🧩 Starting to load banner ad');
+      final adService = AdService();
+      final adUnitId = adService.bannerAdUnitId;
+      debugPrint('🧩 Using ad unit ID: $adUnitId');
+      
+      _bannerAd = BannerAd(
+        adUnitId: adUnitId,
+        size: AdSize.mediumRectangle, // Bigger ad size (300x250)
+        request: const AdRequest(),
+        listener: BannerAdListener(
+          onAdLoaded: (ad) {
+            debugPrint('🧩 Banner ad loaded successfully! 🎉');
+            setState(() {
+              _isAdLoaded = true;
+            });
+          },
+          onAdFailedToLoad: (Ad ad, LoadAdError error) {
+            debugPrint('🧩 Banner ad failed to load: ${error.message}');
+            debugPrint('🧩 Error code: ${error.code}, domain: ${error.domain}');
+            ad.dispose();
+            setState(() {
+              _bannerAd = null;
+            });
+          },
+        ),
+      );
 
-    _bannerAd?.load();
+      debugPrint('🧩 Calling load() on banner ad');
+      _bannerAd?.load();
+    } catch (e) {
+      debugPrint('🧩 Error setting up banner ad: $e');
+    }
   }
 
   void _disposeAd() {
+    debugPrint('🧩 Disposing banner ad');
     _bannerAd?.dispose();
     _bannerAd = null;
     _isAdLoaded = false;
@@ -81,10 +99,29 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.isPremium || !_isAdLoaded || _bannerAd == null) {
+    debugPrint('🧩 Ad Banner build - isPremium: ${widget.isPremium}, isAdLoaded: $_isAdLoaded, hasAd: ${_bannerAd != null}');
+    
+    if (widget.isPremium) {
+      debugPrint('🧩 User is premium, not showing ad');
       return const SizedBox.shrink();
     }
+    
+    if (!_isAdLoaded || _bannerAd == null) {
+      debugPrint('🧩 Ad not loaded yet, showing placeholder');
+      return Container(
+        width: 300,
+        height: 250,
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.withOpacity(0.5)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Text('Ad space - loading...'),
+      );
+    }
 
+    debugPrint('🧩 Showing real ad banner');
     return Container(
       width: _bannerAd!.size.width.toDouble(),
       height: _bannerAd!.size.height.toDouble(),

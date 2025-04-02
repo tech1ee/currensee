@@ -1,229 +1,305 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:async';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../models/currency.dart';
+import '../providers/currency_provider.dart';
+import '../utils/keyboard_util.dart';
 import 'currency_flag_placeholder.dart';
+import 'dart:async';
+import 'dart:io' show Platform;
 
 class CurrencyListItem extends StatefulWidget {
   final Currency currency;
-  final bool isBaseCurrency;
   final Function(String, double) onValueChanged;
-  final int index;
+  final bool isBaseCurrency;
+  final bool isSelected;
   final bool isEditing;
+  final VoidCallback onTap;
   final VoidCallback onEditStart;
   final VoidCallback onEditEnd;
 
   const CurrencyListItem({
-    Key? key,
+    super.key,
     required this.currency,
-    required this.isBaseCurrency,
     required this.onValueChanged,
-    required this.index,
+    required this.onTap,
+    required this.isBaseCurrency,
+    required this.isSelected,
     required this.isEditing,
     required this.onEditStart,
     required this.onEditEnd,
-  }) : super(key: key);
+  });
 
   @override
   State<CurrencyListItem> createState() => _CurrencyListItemState();
 }
 
-class _CurrencyListItemState extends State<CurrencyListItem> {
-  late TextEditingController _controller;
+class _CurrencyListItemState extends State<CurrencyListItem> with WidgetsBindingObserver {
+  final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+  bool _blockValueUpdates = false;
+  Timer? _updateDebouncer;
+  Timer? _focusDebouncer;
+  bool _processingFocus = false;
   bool _isEditing = false;
+  DateTime _lastFocusTime = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: _formatValue(widget.currency.value));
+    WidgetsBinding.instance.addObserver(this);
+    _updateControllerText();
+    _focusNode.addListener(_handleFocusChange);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _updateDebouncer?.cancel();
+    _focusDebouncer?.cancel();
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChange() {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    debugPrint('[$timestamp] 🎯 Focus changed for ${widget.currency.code}: hasFocus=${_focusNode.hasFocus}');
+    
+    if (_focusNode.hasFocus) {
+      if (!_isEditing) {
+        _isEditing = true;
+        widget.onEditStart();
+        debugPrint('[$timestamp] ✏️ Started editing ${widget.currency.code}');
+      }
+    } else {
+      if (_isEditing) {
+        _isEditing = false;
+        widget.onEditEnd();
+        debugPrint('[$timestamp] ✅ Finished editing ${widget.currency.code}');
+        
+        // Update value when focus is lost
+        if (_controller.text.isEmpty) {
+          widget.onValueChanged(widget.currency.code, 0);
+          _updateControllerText();
+          debugPrint('[$timestamp] 🧹 Empty text, setting value to 0');
+        } else {
+          // Remove all non-numeric characters except dots and commas
+          String cleanText = _controller.text.replaceAll(RegExp(r'[^\d\.,]'), '');
+          // Replace commas with dots for parsing
+          cleanText = cleanText.replaceAll(',', '.');
+          
+          // If there are multiple dots, keep only the first one
+          final dotIndex = cleanText.indexOf('.');
+          if (dotIndex != -1) {
+            final afterDot = cleanText.substring(dotIndex + 1).replaceAll('.', '');
+            cleanText = cleanText.substring(0, dotIndex + 1) + afterDot;
+          }
+          
+          double? value = double.tryParse(cleanText);
+          if (value != null) {
+            // Round to 2 decimal places before updating
+            value = (value * 100).round() / 100;
+            widget.onValueChanged(widget.currency.code, value);
+            debugPrint('[$timestamp] ✅ Updated value to $value');
+          } else if (_controller.text.isNotEmpty) {
+            debugPrint('[$timestamp] ⚠️ Could not parse value from text: $cleanText');
+            _updateControllerText();
+            debugPrint('[$timestamp] ⚠️ Invalid number format, restoring previous value');
+          }
+        }
+      }
+    }
+  }
+
+  void _updateControllerText() {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    debugPrint('[$timestamp] 📝 Updating controller text for ${widget.currency.code}');
+    
+    if (_isEditing) {
+      debugPrint('[$timestamp] ⏩ Skipping update while editing');
+      return;
+    }
+
+    try {
+      // Format the value with comma separators and exactly 2 decimal places
+      NumberFormat formatter = NumberFormat('#,##0.00', 'en_US');
+      final newText = formatter.format(widget.currency.value);
+      
+      if (_controller.text != newText) {
+        _controller.text = newText;
+        debugPrint('[$timestamp] ✅ Updated text to $newText');
+      } else {
+        debugPrint('[$timestamp] ⏩ Text unchanged, skipping update');
+      }
+    } catch (e) {
+      debugPrint('[$timestamp] ❌ Error formatting value: $e');
+      // Fallback to simple formatting if NumberFormat fails
+      _controller.text = widget.currency.value.toStringAsFixed(2);
+    }
+  }
+
+  void _handleTextChanged(String text) {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    debugPrint('[$timestamp] 📝 Text changed for ${widget.currency.code}: $text');
+    
+    _updateDebouncer?.cancel();
+    _updateDebouncer = Timer(const Duration(milliseconds: 300), () {
+      final debounceTimestamp = DateTime.now().millisecondsSinceEpoch;
+      debugPrint('[$debounceTimestamp] ⏱️ Debounce timer fired for ${widget.currency.code}');
+      
+      if (text.isEmpty) {
+        widget.onValueChanged(widget.currency.code, 0);
+        debugPrint('[$debounceTimestamp] 🧹 Empty text, setting value to 0');
+      } else {
+        // Remove all non-numeric characters except dots and commas
+        String cleanText = text.replaceAll(RegExp(r'[^\d\.,]'), '');
+        // Replace commas with dots
+        cleanText = cleanText.replaceAll(',', '.');
+        
+        // If there are multiple dots, keep only the first one
+        final dotIndex = cleanText.indexOf('.');
+        if (dotIndex != -1) {
+          final afterDot = cleanText.substring(dotIndex + 1).replaceAll('.', '');
+          cleanText = cleanText.substring(0, dotIndex + 1) + afterDot;
+        }
+        
+        double? value = double.tryParse(cleanText);
+        if (value != null) {
+          widget.onValueChanged(widget.currency.code, value);
+          debugPrint('[$debounceTimestamp] ✅ Updated value to $value');
+        } else {
+          debugPrint('[$debounceTimestamp] ⚠️ Could not parse value from text: $cleanText');
+        }
+      }
+    });
   }
 
   @override
   void didUpdateWidget(CurrencyListItem oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    debugPrint('[$timestamp] 🔄 Widget updated for ${widget.currency.code}');
+    debugPrint('[$timestamp]   Old value: ${oldWidget.currency.value}, New value: ${widget.currency.value}');
+    debugPrint('[$timestamp]   Is editing: $_isEditing');
     
-    // Always update the controller text when the value changes
-    if (oldWidget.currency.value != widget.currency.value) {
+    if (!_isEditing && oldWidget.currency.value != widget.currency.value) {
       _updateControllerText();
+    } else {
+      debugPrint('[$timestamp] ⏩ Skipping update: editing=$_isEditing, value changed=${oldWidget.currency.value != widget.currency.value}');
     }
-  }
-  
-  void _updateControllerText() {
-    final formattedValue = _formatValue(widget.currency.value);
-    if (_controller.text != formattedValue) {
-      _controller.text = formattedValue;
-    }
-  }
-
-  String _formatValue(double value) {
-    if (value == 0) return '0';
-    
-    // Format with 2 decimal places first
-    String formatted = value.toStringAsFixed(2);
-    
-    // Remove trailing zeros after decimal point
-    formatted = formatted.replaceAll(RegExp(r'\.?0*$'), '');
-    
-    // Split into whole and decimal parts
-    final parts = formatted.split('.');
-    final wholePart = parts[0];
-    
-    // Add commas to the whole part
-    final withCommas = wholePart.replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (Match m) => '${m[1]},'
-    );
-    
-    // Recombine with decimal part if it exists
-    return parts.length > 1 ? '$withCommas.${parts[1]}' : withCommas;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: widget.isBaseCurrency 
-          ? Theme.of(context).colorScheme.primary.withOpacity(0.08)
-          : Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: Theme.of(context).dividerColor.withOpacity(0.12),
-              width: 0.5,
-            ),
+    return Container(
+      decoration: BoxDecoration(
+        color: widget.isBaseCurrency 
+            ? Theme.of(context).colorScheme.primary.withOpacity(0.05)
+            : Colors.transparent,
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor.withOpacity(0.1),
+            width: 1,
           ),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Flag - Fixed width column
-            SizedBox(
-              width: 28,
-              height: 18,
-              child: widget.currency.flagUrl.isNotEmpty
-                  ? Image.network(
-                      widget.currency.flagUrl,
-                      width: 28,
-                      height: 18,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return CurrencyFlagPlaceholder(
-                          size: 28,
-                          currencyCode: widget.currency.code,
-                        );
-                      },
-                    )
-                  : CurrencyFlagPlaceholder(
-                      size: 28,
-                      currencyCode: widget.currency.code,
+      ),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              // Flag
+              Container(
+                width: 36,
+                height: 24,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: Theme.of(context).dividerColor.withOpacity(0.2),
+                    width: 1,
+                  ),
+                  image: DecorationImage(
+                    image: NetworkImage(widget.currency.flagUrl),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              
+              // Currency code and name with base indicator
+              Expanded(
+                flex: 2,
+                child: Row(
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            if (widget.isBaseCurrency)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: Icon(
+                                  Icons.star,
+                                  size: 14,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                            Text(
+                              widget.currency.code,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: widget.isBaseCurrency ? FontWeight.w700 : FontWeight.w500,
+                                color: widget.isBaseCurrency 
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context).textTheme.bodyLarge?.color,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.currency.name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-            ),
-            const SizedBox(width: 12),
-            // Currency code - Fixed width column
-            SizedBox(
-              width: 40,
-              child: Text(
-                widget.currency.code,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                  color: widget.isBaseCurrency 
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).textTheme.bodyLarge?.color,
+                  ],
                 ),
               ),
-            ),
-            // Currency name - Flexible width column but with smaller flex
-            Expanded(
-              flex: 1,
-              child: Text(
-                widget.currency.name,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 8),
-            // Value editor - Increased flex for wider display
-            Expanded(
-              flex: 3,
-              child: Container(
-                height: 34,
-                alignment: Alignment.centerRight,
+              
+              // Currency value
+              Expanded(
+                flex: 3,
                 child: TextField(
                   controller: _controller,
+                  focusNode: _focusNode,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   textAlign: TextAlign.right,
                   decoration: const InputDecoration(
-                    isDense: true,
-                    isCollapsed: true,
-                    contentPadding: EdgeInsets.zero,
+                    hintText: '0.00',
                     border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
                   ),
+                  onChanged: _handleTextChanged,
                   style: TextStyle(
-                    fontSize: 24,
-                    height: 1,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: -0.3,
-                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                    fontSize: 16,
+                    fontWeight: widget.isBaseCurrency ? FontWeight.w600 : FontWeight.w400,
                   ),
-                  expands: false,
-                  maxLines: 1,
-                  minLines: 1,
-                  inputFormatters: [
-                    LengthLimitingTextInputFormatter(20), // Increased character limit
-                  ],
-                  onTap: () {
-                    setState(() {
-                      _isEditing = true;
-                    });
-                    widget.onEditStart();
-                  },
-                  onChanged: (value) {
-                    value = value.replaceAll(RegExp(r'[^\d\.]'), '');
-                    
-                    final parts = value.split('.');
-                    if (parts.length > 2) {
-                      value = '${parts[0]}.${parts.sublist(1).join('')}';
-                    }
-                    
-                    double newValue = double.tryParse(value) ?? 0;
-                    
-                    widget.onValueChanged(widget.currency.code, newValue);
-                    
-                    _updateControllerText();
-                  },
-                  onEditingComplete: () {
-                    setState(() {
-                      _isEditing = false;
-                    });
-                    _updateControllerText();
-                    widget.onEditEnd();
-                  },
-                  onSubmitted: (_) {
-                    setState(() {
-                      _isEditing = false;
-                    });
-                    _updateControllerText();
-                    widget.onEditEnd();
-                  },
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-} 
+}

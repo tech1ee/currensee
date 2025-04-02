@@ -51,7 +51,13 @@ A modern currency tracking application with real-time exchange rates.
    flutter pub get
    ```
 
-4. Run the app
+4. Set up environment variables
+   ```bash
+   cp .env.example .env
+   ```
+   Then edit the `.env` file with your actual API keys and Ad Unit IDs.
+
+5. Run the app
    ```bash
    flutter run
    ```
@@ -154,6 +160,10 @@ Note: The Firebase configuration files (`google-services.json` and `GoogleServic
 
 ## Security Notes
 
-- The `firebase_options.dart` file in the repository contains Firebase API keys, but these are safe to include in public repositories as they require additional security rules on the Firebase console to secure your data
-- For production deployments, ensure proper Firebase security rules are configured
-- Any additional API keys should be stored in environment variables or a secure storage solution, not hardcoded in the app
+- The Firebase configuration files and API keys are now managed through environment variables (.env)
+- Never commit the `.env` file to version control (it's already added to `.gitignore`)
+- For development, use `.env.example` as a template to create your own `.env` file
+- For CI/CD and production deployments, inject environment variables through your build pipeline
+- Use test API keys for AdMob during development and testing
+- Make sure Firebase security rules are properly configured
+- All API keys are loaded at runtime from environment variables, making the app more secure

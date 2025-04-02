@@ -4,6 +4,9 @@ platform :ios, '12.0'
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
+# Turn on verbose pod logging (for debugging)
+ENV['COCOAPODS_VERBOSE'] = 'true'
+
 project 'Runner', {
   'Debug' => :debug,
   'Profile' => :release,
@@ -31,6 +34,12 @@ target 'Runner' do
   use_frameworks!
   use_modular_headers!
 
+  # Add explicit Firebase pods with modular headers
+  pod 'Firebase/Core', :modular_headers => true
+  pod 'Firebase/Analytics', :modular_headers => true
+  # Uncomment this if you need Crashlytics explicitly
+  # pod 'Firebase/Crashlytics', :modular_headers => true
+
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 
   target 'RunnerTests' do
@@ -41,10 +50,71 @@ target 'Runner' do
     installer.pods_project.targets.each do |target|
       flutter_additional_ios_build_settings(target)
       
+      # Fix deployment target for all pods
       target.build_configurations.each do |config|
-        config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
         config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+        
+        # Fix for non-modular includes in headers
+        config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+        
+        # Disable excessive warnings for deprecated APIs in Google Mobile Ads
+        if target.name.start_with?('Google-Mobile-Ads-SDK') || 
+           target.name.include?('Google-Mobile-Ads') || 
+           target.name.include?('google_mobile_ads')
+          config.build_settings['GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS'] = 'NO'
+          config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+        end
+        
+        # Set header search paths for Firebase
+        if target.name.start_with?('Firebase') || 
+           target.name.include?('Firebase') || 
+           target.name.include?('firebase')
+          config.build_settings['HEADER_SEARCH_PATHS'] ||= '$(inherited) '
+          config.build_settings['HEADER_SEARCH_PATHS'] << '"${PODS_ROOT}/Firebase/CoreOnly/Sources" '
+          config.build_settings['FRAMEWORK_SEARCH_PATHS'] ||= '$(inherited) '
+          config.build_settings['FRAMEWORK_SEARCH_PATHS'] << '"${PODS_ROOT}/FirebaseAnalytics/Frameworks" "${PODS_ROOT}/GoogleAppMeasurement/Frameworks" '
+        end
+      end
+      
+      # Additional fixes for Crashlytics
+      if ['firebase_crashlytics', 'FirebaseCrashlytics', 'Crashlytics'].any? { |s| target.name.include?(s) }
+        target.build_configurations.each do |config|
+          # Disable bitcode
+          config.build_settings['ENABLE_BITCODE'] = 'NO'
+          # For Crashlytics, we need more specific settings
+          config.build_settings['ONLY_ACTIVE_ARCH'] = 'NO'
+          # Modify header search paths
+          config.build_settings['HEADER_SEARCH_PATHS'] ||= ['$(inherited)']
+          config.build_settings['HEADER_SEARCH_PATHS'] << "${PODS_ROOT}/Headers/Public"
+          config.build_settings['HEADER_SEARCH_PATHS'] << "${PODS_ROOT}/Headers/Private"
+        end
       end
     end
+    
+    # Create a custom script to patch the Firebase.h file directly
+    installer.pods_project.save
+    system(<<-SCRIPT
+#!/bin/bash
+PLUGIN_DIR="#{ENV['HOME']}/.pub-cache/hosted/pub.dev/firebase_crashlytics-3.3.5/ios/Classes"
+if [ -d "$PLUGIN_DIR" ]; then
+  echo "Found Crashlytics plugin directory at: $PLUGIN_DIR"
+  
+  # Create backup if doesn't exist
+  for header in "$PLUGIN_DIR"/*.h; do
+    if [ ! -f "${header}.orig" ]; then
+      cp "$header" "${header}.orig"
+    fi
+  done
+  
+  # Patch the headers directly with an alternative import approach
+  sed -i '' 's|#import <Firebase/Firebase.h>|// Modified import to avoid module errors\\n#import "Firebase/Firebase.h"|g' "$PLUGIN_DIR/Crashlytics_Platform.h"
+  sed -i '' 's|#import <Firebase/Firebase.h>|// Modified import to avoid module errors\\n#import "Firebase/Firebase.h"|g' "$PLUGIN_DIR/ExceptionModel_Platform.h"
+  
+  echo "Patched Firebase Crashlytics headers successfully"
+else
+  echo "Warning: Crashlytics plugin directory not found at: $PLUGIN_DIR"
+fi
+SCRIPT
+    )
   end
 end

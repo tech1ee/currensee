@@ -31,7 +31,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _autoRefreshTimer;
-  bool _isLoading = false;
+  bool _isRefreshing = false;
   String _errorMessage = '';
   final TextEditingController _amountController = TextEditingController();
   final AdService _adService = AdService();
@@ -42,6 +42,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _setupAutoRefresh();
     _adService.loadInterstitialAd();
+    
+    // Set up auto refresh logic
+    _setupAutoRefresh();
+    
+    // Force a refresh of exchange rates on app startup if needed
+    _ensureExchangeRatesLoaded();
   }
 
   @override
@@ -64,14 +70,88 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _loadSelectedCurrencies() async {
-    if (!mounted) return;
-    
-    final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
-    final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-    
-    if (userPrefs.selectedCurrencyCodes.isNotEmpty) {
-      await currencyProvider.reloadSelectedCurrencies(userPrefs.selectedCurrencyCodes);
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+      final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+      
+      print('🔄 Home screen: Loading selected currencies from preferences');
+      print('   Base currency: ${userPrefs.baseCurrencyCode}');
+      print('   Selected currencies: ${userPrefs.selectedCurrencyCodes.join(", ")}');
+      
+      // First, ensure base currency in provider matches user preferences
+      if (currencyProvider.baseCurrencyCode != userPrefs.baseCurrencyCode) {
+        print('🔄 Setting base currency in provider to match preferences: ${userPrefs.baseCurrencyCode}');
+        await currencyProvider.setBaseCurrency(userPrefs.baseCurrencyCode);
+      }
+      
+      // Now get the list of selected currencies
+      final List<String> selectedCurrencies = userPrefs.selectedCurrencyCodes.toList();
+      
+      // Deduplicate the selected currencies
+      final Set<String> uniqueSelectedCurrencies = selectedCurrencies.toSet();
+      final List<String> uniqueSelectedCurrenciesList = uniqueSelectedCurrencies.toList();
+      
+      // Make sure the base currency is included in the list
+      final String baseCurrency = userPrefs.baseCurrencyCode;
+      print('📌 Ensuring base currency $baseCurrency is in the selected currencies list');
+      
+      bool hasBaseCurrency = uniqueSelectedCurrencies.contains(baseCurrency);
+      if (!hasBaseCurrency && baseCurrency.isNotEmpty) {
+        print('⚠️ Base currency $baseCurrency is missing from selected currencies');
+        uniqueSelectedCurrenciesList.insert(0, baseCurrency);
+      }
+      
+      // If reordering is needed, ensure base currency is first
+      if (uniqueSelectedCurrenciesList.isNotEmpty && 
+          uniqueSelectedCurrenciesList.first != baseCurrency && 
+          baseCurrency.isNotEmpty) {
+        print('📌 Ensuring base currency $baseCurrency is pinned at the top');
+        
+        // Remove the base currency from its current position
+        uniqueSelectedCurrenciesList.remove(baseCurrency);
+        // Add it back at the beginning
+        uniqueSelectedCurrenciesList.insert(0, baseCurrency);
+        
+        // Log the new order
+        print('📌 Sorted currency order: ${uniqueSelectedCurrenciesList.join(", ")}');
+      }
+      
+      // Load the currencies with the base currency first
+      print('🔄 Reloading selected currencies: ${uniqueSelectedCurrenciesList.join(", ")}');
+      await currencyProvider.selectCurrencies(uniqueSelectedCurrenciesList);
+      
+      // After loading, verify one more time
+      print('📌 Home screen: Final check to ensure base currency is loaded');
+      print('📌 Ensuring base currency $baseCurrency is in the selected currencies list');
+      
+      // Final safety check to make sure selected currencies includes base currency
+      bool finalHasBaseCurrency = currencyProvider.selectedCurrencies
+          .any((c) => c.code == baseCurrency);
+          
+      if (!finalHasBaseCurrency && baseCurrency.isNotEmpty) {
+        print('⚠️ Base currency $baseCurrency is missing from selected currencies');
+        
+        // Force add the base currency and update again
+        final updatedList = [baseCurrency, ...currencyProvider.selectedCurrencies.map((c) => c.code)];
+        print('✅ Added base currency $baseCurrency to selected currencies');
+        
+        // Save to user preferences
+        userPrefs.setInitialCurrencies(
+          baseCurrency: baseCurrency,
+          selectedCurrencies: updatedList,
+        );
+        
+        // Update provider one last time
+        await currencyProvider.selectCurrencies(updatedList);
+        
+        // Get final verification from preferences
+        print('💾 Saved user preferences with base currency $baseCurrency');
+        print('     VERIFICATION - stored currencies: ${userPrefs.selectedCurrencyCodes.join(", ")}');
+        print('     VERIFICATION - stored base currency: ${userPrefs.baseCurrencyCode}');
+      }
+      
+      print('✅ Home screen: Currencies loaded and ordered correctly');
+    });
   }
 
   // Handle automatic refresh on app launch
@@ -134,19 +214,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  // Refresh currency rates with proper handling of rate limits
   Future<void> _refreshRates() async {
-    if (_isLoading) return;
-    
     setState(() {
-      _isLoading = true;
+      _isRefreshing = true;
     });
     
-    // Force reload preferences to get the latest state
     final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-    await currencyProvider.forceReloadPreferences();
+    final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
     
-    // Check if user is premium or can refresh today
-    final isPremium = currencyProvider.userPreferences?.isPremium ?? false;
+    final isPremium = userPrefs.isPremium;
     final canRefreshToday = currencyProvider.canRefreshRatesToday;
     final lastRefresh = currencyProvider.userPreferences?.lastRatesRefresh;
     
@@ -159,7 +236,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (!isPremium && !canRefreshToday) {
       if (mounted) {
         setState(() {
-          _isLoading = false;
+          _isRefreshing = false;
         });
         
         print('🔄 Free user has used daily refresh, showing premium prompt');
@@ -179,21 +256,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       
       if (mounted) {
         setState(() {
-          _isLoading = false;
+          _isRefreshing = false;
         });
-        
-        // When a free user has just used their daily refresh, force an update of the timestamp
-        if (!isPremium && result.success) {
-          print('🔄 Free user successful refresh - updating lastRatesRefresh to now');
-          
-          // This ensures next refresh attempt will show premium prompt
-          currencyProvider.updateLastRefreshTimestamp(DateTime.now());
-        }
         
         if (result.success) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Exchange rates updated')),
           );
+        } else if (result.limitReached ?? false) {
+          // Handle the case where refresh limit is reached during the process
+          // (this is a failsafe, should be caught by the earlier check)
+          print('🔄 Refresh limit reached during refresh, showing premium prompt');
+          _showPremiumPrompt();
         } else if (result.errorMessage != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(result.errorMessage!)),
@@ -204,7 +278,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       print('❌ Error in _refreshRates: $e');
       if (mounted) {
         setState(() {
-          _isLoading = false;
+          _isRefreshing = false;
         });
         
         ScaffoldMessenger.of(context).showSnackBar(
@@ -381,9 +455,65 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _handleCurrencyValueChanged(String code, double value) {
+  // Handle currency value change events
+  void _handleValueChange(String code, double value) async {
     final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-    currencyProvider.updateCurrencyValue(code, value);
+    
+    // Check if exchange rates are available first
+    if (currencyProvider.exchangeRates == null || currencyProvider.exchangeRates!.rates.isEmpty) {
+      // Show an error message to the user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please refresh exchange rates to update values'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+    
+    // Check if we have a valid exchange rate for this specific currency
+    try {
+      double rate = currencyProvider.exchangeRates!.getUsdRate(code);
+      if (rate <= 0.000001) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('No valid exchange rate for $code. Please try refreshing rates.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error checking exchange rate: $e'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Direct update with response handling
+    final updateSucceeded = await currencyProvider.updateCurrencyValue(code, value);
+    
+    // Check result after the update is completed
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !updateSucceeded) {
+        // Show error message to user if update failed
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not update $code. Please try refreshing rates.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    });
   }
 
   void _handleCurrencyTap(Currency currency) {
@@ -440,12 +570,160 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  void _ensureExchangeRatesLoaded() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+      final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+      
+      // FIXED: Get the base currency from user preferences
+      final baseCurrency = userPrefs.baseCurrencyCode;
+      
+      // First, ensure the base currency is loaded and at the top
+      print('📌 HomeScreen: Ensuring base currency is loaded');
+      print('📌 Using user preference base currency: $baseCurrency');
+      
+      // Set the base currency in the provider first
+      if (baseCurrency.isNotEmpty && currencyProvider.baseCurrencyCode != baseCurrency) {
+        print('📌 Updating base currency in provider to: $baseCurrency');
+        await currencyProvider.setBaseCurrency(baseCurrency);
+      }
+      
+      // Now ensure it's loaded
+      await currencyProvider.ensureBaseCurrencyIsLoaded();
+      
+      // Check if exchange rates are available
+      if (currencyProvider.exchangeRates == null || 
+          currencyProvider.exchangeRates!.rates.isEmpty) {
+        print('⚠️ No exchange rates available on startup - forcing load');
+        
+        // Try to fetch exchange rates silently
+        try {
+          await currencyProvider.fetchExchangeRates();
+          print('✅ Successfully loaded exchange rates on startup');
+        } catch (e) {
+          print('❌ Error loading exchange rates on startup: $e');
+          // Show a snackbar if rates couldn't be loaded
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Please refresh exchange rates to update values'),
+                duration: const Duration(seconds: 4),
+                action: SnackBarAction(
+                  label: 'Refresh',
+                  onPressed: () {
+                    _handleRefresh();
+                  },
+                ),
+              ),
+            );
+          }
+        }
+      } else {
+        print('✅ Exchange rates already available on startup');
+      }
+    });
+  }
+
+  // Handle currency refresh button press
+  Future<void> _handleRefresh() async {
+    final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+    final userPrefs = Provider.of<UserPreferencesProvider>(context, listen: false);
+    
+    setState(() {
+      _isRefreshing = true;
+    });
+    
+    try {
+      // Try to refresh rates
+      final result = await currencyProvider.tryRefreshRates();
+      
+      if (result.success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Exchange rates updated successfully'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          if (result.limitReached) {
+            // Free users hit their limit
+            _showRefreshLimitDialog();
+          } else {
+            // Generic error
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(result.errorMessage ?? 'Failed to update exchange rates'),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error refreshing rates: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRefreshing = false;
+        });
+      }
+    }
+  }
+
+  // Show dialog when free user hits refresh limit
+  void _showRefreshLimitDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Refresh Limit Reached'),
+        content: const Text(
+          'Free users can refresh exchange rates once per day. Upgrade to premium for unlimited refreshes!'
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Later'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // TODO: Navigate to premium screen
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+            ),
+            child: const Text('Upgrade'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final userPrefs = Provider.of<UserPreferencesProvider>(context);
     final currencyProvider = Provider.of<CurrencyProvider>(context);
     final isOffline = currencyProvider.isOffline;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    // Debug print to check if lastRatesRefresh is available
+    if (currencyProvider.userPreferences?.lastRatesRefresh != null) {
+      print('🕒 Last refresh timestamp: ${currencyProvider.userPreferences!.lastRatesRefresh}');
+    } else {
+      print('🕒 No last refresh timestamp available');
+    }
     
     return WillPopScope(
       onWillPop: () async => true,
@@ -472,44 +750,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               children: [
                 if (currencyProvider.userPreferences?.lastRatesRefresh != null)
                   Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          'Last refresh',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w500,
-                            color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.5),
-                          ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                          width: 1.0,
                         ),
-                        Text(
-                          DateFormat('dd.MM.yyyy').format(currencyProvider.userPreferences!.lastRatesRefresh!),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.4),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Text(
+                            'Last refresh',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
+                            ),
                           ),
-                        ),
-                        Text(
-                          DateFormat('HH:mm').format(currencyProvider.userPreferences!.lastRatesRefresh!),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.4),
+                          Text(
+                            DateFormat('dd.MM HH:mm').format(currencyProvider.userPreferences!.lastRatesRefresh!),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
+                // Add a small gap
+                const SizedBox(width: 4),
+                // Refresh button
                 IconButton(
                   icon: Icon(
                     Icons.refresh_rounded,
-                    color: _isLoading 
+                    color: _isRefreshing 
                         ? Theme.of(context).disabledColor
                         : Theme.of(context).colorScheme.primary,
                   ),
-                  onPressed: _isLoading ? null : _refreshRates,
+                  onPressed: _isRefreshing ? null : _refreshRates,
                 ),
               ],
             ),
@@ -680,30 +966,48 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     return;
                                   }
 
-                                  // Adjust indices
-                                  if (newIndex > oldIndex) {
-                                    newIndex -= 1;
-                                  }
-
-                                  // Get current order
+                                  // Get current order and values
                                   final currencies = currencyProvider.selectedCurrencies;
                                   
-                                  // Don't allow moving the base currency
-                                  if (currencies[oldIndex].code == userPrefs.baseCurrencyCode) {
+                                  // Always keep base currency at index 0
+                                  if (oldIndex == 0 || newIndex == 0) {
+                                    print('🔒 Base currency must stay at the top');
                                     return;
                                   }
 
-                                  // Create new order
+                                  // Store current values before reordering
+                                  final values = Map<String, double>.fromEntries(
+                                    currencies.map((c) => MapEntry(c.code, c.value))
+                                  );
+
+                                  // Adjust indices for actual move
+                                  final actualNewIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
+
+                                  // Create new order - MAKE SURE TO INCLUDE THE BASE CURRENCY
                                   final List<String> newOrder = currencies.map((c) => c.code).toList();
                                   final item = newOrder.removeAt(oldIndex);
-                                  newOrder.insert(newIndex, item);
+                                  newOrder.insert(actualNewIndex, item);
+                                  
+                                  // CRITICAL FIX: Ensure base currency is in the list and at position 0
+                                  final baseCurrency = userPrefs.baseCurrencyCode;
+                                  if (baseCurrency.isNotEmpty) {
+                                    // Remove base currency if it exists elsewhere in the list
+                                    newOrder.remove(baseCurrency);
+                                    // Insert it at the beginning
+                                    newOrder.insert(0, baseCurrency);
+                                    print('📌 Ensured base currency $baseCurrency is at the top after reordering');
+                                  }
 
+                                  print('📝 Reordering currencies: ${newOrder.join(", ")}');
+                                  
                                   // Update order in preferences and provider
                                   userPrefs.setInitialCurrencies(
                                     baseCurrency: userPrefs.baseCurrencyCode,
                                     selectedCurrencies: newOrder,
                                   );
-                                  currencyProvider.selectCurrencies(newOrder);
+                                  
+                                  // Update the order in the provider while preserving values
+                                  currencyProvider.selectCurrencies(newOrder, shouldRecalculate: false);
                                 },
                                 itemBuilder: (context, index) {
                                   // If this is the last index, show the add button
@@ -752,7 +1056,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   final isBaseCurrency = currency.code == userPrefs.baseCurrencyCode;
                                   
                                   return Container(
-                                    key: ValueKey('currency_${currency.code}'),
+                                    key: ValueKey('currency_${currency.code}_$index'),
                                     child: Row(
                                       children: [
                                         // Add a dedicated drag handle that only appears for non-base currencies
@@ -777,12 +1081,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                         Expanded(
                                           child: CurrencyListItem(
                                             currency: currency,
-                                            onValueChanged: (code, value) => currencyProvider.updateCurrencyValue(code, value),
-                                            isBaseCurrency: isBaseCurrency,
+                                            onValueChanged: _handleValueChange,
+                                            isBaseCurrency: currencyProvider.baseCurrencyCode == currency.code,
                                             isEditing: currencyProvider.currentlyEditedCurrencyCode == currency.code,
                                             onEditStart: () => currencyProvider.setCurrentlyEditedCurrencyCode(currency.code),
                                             onEditEnd: () => currencyProvider.clearCurrentlyEditedCurrencyCode(),
-                                            index: index,
+                                            onTap: () => _handleCurrencyTap(currency),
+                                            isSelected: false,
                                           ),
                                         ),
                                       ],

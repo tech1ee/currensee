@@ -8,14 +8,16 @@ class AppConstants {
   // App Limitations
   static const int maxCurrenciesFreeTier = 5;
   
-  // AdMob test IDs - Replace these with your actual ad unit IDs before publishing to production
-  // For testing, always use the test IDs provided by Google:
+  // AdMob production IDs - Replace these with your actual ad unit IDs
+  // For testing, use the test IDs provided by Google:
   // https://developers.google.com/admob/android/test-ads
   // https://developers.google.com/admob/ios/test-ads
-  static const String bannerAdUnitIdAndroid = 'ca-app-pub-3940256099942544/6300978111'; // Test ID
-  static const String bannerAdUnitIdiOS = 'ca-app-pub-3940256099942544/2934735716'; // Test ID
-  static const String interstitialAdUnitIdAndroid = 'ca-app-pub-3940256099942544/1033173712'; // Test ID
-  static const String interstitialAdUnitIdiOS = 'ca-app-pub-3940256099942544/4411468910'; // Test ID
+  
+  // TODO: Replace these with your actual production Ad Unit IDs
+  static const String bannerAdUnitIdAndroid = 'ca-app-pub-XXXXXXXXXXXXXXXX/NNNNNNNNNN'; 
+  static const String bannerAdUnitIdiOS = 'ca-app-pub-XXXXXXXXXXXXXXXX/NNNNNNNNNN'; 
+  static const String interstitialAdUnitIdAndroid = 'ca-app-pub-XXXXXXXXXXXXXXXX/NNNNNNNNNN'; 
+  static const String interstitialAdUnitIdiOS = 'ca-app-pub-XXXXXXXXXXXXXXXX/NNNNNNNNNN'; 
   
   // App Theme Colors
   static const String lightPrimaryColor = '#FFFFFF';

@@ -33,22 +33,50 @@ dependencies:
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.2
+  cupertino_icons: ^1.0.6
   
   # State management
-  provider: ^6.0.5
+  provider: ^6.1.2
   
   # For API calls
-  http: ^1.1.0
+  http: ^1.2.0
   
   # For local storage
-  shared_preferences: ^2.2.1
+  shared_preferences: ^2.2.2
   
   # For ads
   google_mobile_ads: ^5.3.1
   
   # For formatted text
-  intl: ^0.18.1
+  intl: ^0.19.0
+  
+  # For environment variables
+  flutter_dotenv: ^5.1.0
+  
+  # For Firebase services - use fixed versions that are known to work together
+  firebase_core: ^2.25.5
+  firebase_analytics: ^10.8.10
+  
+  # For collection
+  collection: ^1.18.0
+  
+  # For URL launcher
+  url_launcher: ^6.2.4
+  
+  # For in-app purchase
+  in_app_purchase: ^3.1.11
+  
+  # For connectivity
+  connectivity_plus: ^5.0.2
+  
+  # For package info
+  package_info_plus: ^8.3.0
+  
+  # For webview
+  webview_flutter: ^4.5.0
+  
+  # For responsive UI
+  flutter_screenutil: ^5.9.0
 
 dev_dependencies:
   flutter_test:
@@ -77,6 +105,7 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+    - .env
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

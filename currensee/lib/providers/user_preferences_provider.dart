@@ -6,7 +6,7 @@ class UserPreferencesProvider with ChangeNotifier {
   StorageService _storageService = StorageService();
   bool _isLoading = true;
   String? _error;
-  late UserPreferences _preferences;
+  UserPreferences? _preferences;
 
   UserPreferencesProvider() {
     _loadPreferences();
@@ -15,12 +15,12 @@ class UserPreferencesProvider with ChangeNotifier {
   // Getters
   bool get isLoading => _isLoading;
   String? get error => _error;
-  bool get isPremium => _preferences.isPremium;
-  ThemeMode get themeMode => _preferences.themeMode;
-  List<String> get selectedCurrencyCodes => _preferences.selectedCurrencyCodes;
-  String get baseCurrencyCode => _preferences.baseCurrencyCode;
-  DateTime? get lastRatesRefresh => _preferences.lastRatesRefresh;
-  bool get hasCompletedInitialSetup => _preferences.hasCompletedInitialSetup;
+  bool get isPremium => _preferences?.isPremium ?? false;
+  ThemeMode get themeMode => _preferences?.themeMode ?? ThemeMode.system;
+  List<String> get selectedCurrencyCodes => _preferences?.selectedCurrencyCodes ?? [];
+  String get baseCurrencyCode => _preferences?.baseCurrencyCode ?? '';
+  DateTime? get lastRatesRefresh => _preferences?.lastRatesRefresh;
+  bool get hasCompletedInitialSetup => _preferences?.hasCompletedInitialSetup ?? false;
 
   // Load preferences from storage
   Future<void> _loadPreferences() async {
@@ -43,9 +43,13 @@ class UserPreferencesProvider with ChangeNotifier {
 
   // Save preferences to storage
   Future<void> _savePreferences() async {
+    if (_preferences == null) {
+      _preferences = UserPreferences();
+    }
+    
     try {
-      print('📝 Saving preferences to storage: ${_preferences.toJson()}');
-      await _storageService.saveUserPreferences(_preferences);
+      print('📝 Saving preferences to storage: ${_preferences!.toJson()}');
+      await _storageService.saveUserPreferences(_preferences!);
       print('📝 Preferences saved successfully');
       notifyListeners();
     } catch (e) {
@@ -56,7 +60,10 @@ class UserPreferencesProvider with ChangeNotifier {
 
   // Complete initial setup
   Future<void> completeInitialSetup() async {
-    _preferences = _preferences.copyWith(hasCompletedInitialSetup: true);
+    if (_preferences == null) {
+      _preferences = UserPreferences();
+    }
+    _preferences = _preferences!.copyWith(hasCompletedInitialSetup: true);
     await _savePreferences();
   }
 
@@ -67,18 +74,22 @@ class UserPreferencesProvider with ChangeNotifier {
   }) async {
     print('📝 Setting initial currencies: Base=$baseCurrency, Selected=${selectedCurrencies.join(", ")}');
     
+    if (_preferences == null) {
+      _preferences = UserPreferences();
+    }
+    
     // Ensure the base currency is always included in the selected currencies
     if (!selectedCurrencies.contains(baseCurrency) && baseCurrency.isNotEmpty) {
       selectedCurrencies = [baseCurrency, ...selectedCurrencies];
     }
     
-    _preferences = _preferences.copyWith(
+    _preferences = _preferences!.copyWith(
       baseCurrencyCode: baseCurrency,
       selectedCurrencyCodes: selectedCurrencies,
     );
     
     // Save to storage
-    await _storageService.saveUserPreferences(_preferences);
+    await _storageService.saveUserPreferences(_preferences!);
     
     // Verify currencies were saved correctly by loading them back
     final verification = await _storageService.loadUserPreferences();
@@ -90,68 +101,84 @@ class UserPreferencesProvider with ChangeNotifier {
 
   // Set theme mode
   Future<void> setThemeMode(ThemeMode themeMode) async {
-    if (themeMode == _preferences.themeMode) return;
+    if (_preferences == null) {
+      _preferences = UserPreferences();
+    }
     
-    _preferences = _preferences.copyWith(themeMode: themeMode);
-    await _storageService.saveUserPreferences(_preferences);
+    if (themeMode == _preferences!.themeMode) return;
+    
+    _preferences = _preferences!.copyWith(themeMode: themeMode);
+    await _storageService.saveUserPreferences(_preferences!);
     notifyListeners();
   }
 
   // Add a currency to selected list
   Future<void> addCurrency(String currencyCode) async {
-    if (_preferences.selectedCurrencyCodes.contains(currencyCode)) return;
+    if (_preferences == null) {
+      _preferences = UserPreferences();
+    }
+    
+    if (_preferences!.selectedCurrencyCodes.contains(currencyCode)) return;
     
     // Check if user is at the free tier limit
-    if (!_preferences.isPremium && 
-        _preferences.selectedCurrencyCodes.length >= 5) {
+    if (!_preferences!.isPremium && 
+        _preferences!.selectedCurrencyCodes.length >= 5) {
       throw Exception('Free users can only add up to 5 currencies');
     }
     
-    final updatedList = List<String>.from(_preferences.selectedCurrencyCodes)
+    final updatedList = List<String>.from(_preferences!.selectedCurrencyCodes)
       ..add(currencyCode);
     
-    _preferences = _preferences.copyWith(selectedCurrencyCodes: updatedList);
-    await _storageService.saveUserPreferences(_preferences);
+    _preferences = _preferences!.copyWith(selectedCurrencyCodes: updatedList);
+    await _storageService.saveUserPreferences(_preferences!);
     notifyListeners();
   }
 
   // Remove a currency from selected list
   Future<void> removeCurrency(String currencyCode) async {
-    if (!_preferences.selectedCurrencyCodes.contains(currencyCode)) return;
+    if (_preferences == null) {
+      _preferences = UserPreferences();
+    }
+    
+    if (!_preferences!.selectedCurrencyCodes.contains(currencyCode)) return;
     
     // Don't allow removing base currency
-    if (currencyCode == _preferences.baseCurrencyCode) {
+    if (currencyCode == _preferences!.baseCurrencyCode) {
       throw Exception('Cannot remove base currency');
     }
     
-    final updatedList = List<String>.from(_preferences.selectedCurrencyCodes)
+    final updatedList = List<String>.from(_preferences!.selectedCurrencyCodes)
       ..remove(currencyCode);
     
-    _preferences = _preferences.copyWith(selectedCurrencyCodes: updatedList);
-    await _storageService.saveUserPreferences(_preferences);
+    _preferences = _preferences!.copyWith(selectedCurrencyCodes: updatedList);
+    await _storageService.saveUserPreferences(_preferences!);
     notifyListeners();
   }
 
   // Set base currency
   Future<void> setBaseCurrency(String currencyCode) async {
-    if (currencyCode == _preferences.baseCurrencyCode) return;
+    if (_preferences == null) {
+      _preferences = UserPreferences();
+    }
+    
+    if (currencyCode == _preferences!.baseCurrencyCode) return;
     
     print('📝 Setting base currency: $currencyCode');
     
     // Make sure the currency is in the selected list
-    if (!_preferences.selectedCurrencyCodes.contains(currencyCode)) {
-      final updatedList = List<String>.from(_preferences.selectedCurrencyCodes)
+    if (!_preferences!.selectedCurrencyCodes.contains(currencyCode)) {
+      final updatedList = List<String>.from(_preferences!.selectedCurrencyCodes)
         ..add(currencyCode);
       
-      _preferences = _preferences.copyWith(
+      _preferences = _preferences!.copyWith(
         selectedCurrencyCodes: updatedList,
         baseCurrencyCode: currencyCode,
       );
     } else {
-      _preferences = _preferences.copyWith(baseCurrencyCode: currencyCode);
+      _preferences = _preferences!.copyWith(baseCurrencyCode: currencyCode);
     }
     
-    await _storageService.saveUserPreferences(_preferences);
+    await _storageService.saveUserPreferences(_preferences!);
     print('📝 Base currency saved: $currencyCode');
     
     // Verify currencies were saved correctly by loading them back
@@ -164,14 +191,18 @@ class UserPreferencesProvider with ChangeNotifier {
 
   // Set the premium status and save
   Future<void> setPremiumStatus(bool isPremium) async {
-    if (_preferences.isPremium != isPremium) {
+    if (_preferences == null) {
+      _preferences = UserPreferences();
+    }
+    
+    if (_preferences!.isPremium != isPremium) {
       print('💰 Setting premium status to: $isPremium');
       
       // Update preferences with new premium status
-      _preferences = _preferences.copyWith(isPremium: isPremium);
+      _preferences = _preferences!.copyWith(isPremium: isPremium);
       
       // Save updated preferences
-      await _storageService.saveUserPreferences(_preferences);
+      await _storageService.saveUserPreferences(_preferences!);
       
       // Notify listeners
       notifyListeners();
@@ -180,22 +211,26 @@ class UserPreferencesProvider with ChangeNotifier {
   
   // Set the last rates refresh timestamp and save
   Future<void> setLastRatesRefresh(DateTime? timestamp) async {
+    if (_preferences == null) {
+      _preferences = UserPreferences();
+    }
+    
     print('⏰ Setting lastRatesRefresh to: $timestamp');
     
     // Don't update if timestamps are the same
-    if (_preferences.lastRatesRefresh == timestamp) {
+    if (_preferences!.lastRatesRefresh == timestamp) {
       print('⏰ Timestamps are identical, no update needed');
       return;
     }
     
     // Update preferences with new timestamp
-    _preferences = _preferences.copyWith(lastRatesRefresh: timestamp);
+    _preferences = _preferences!.copyWith(lastRatesRefresh: timestamp);
     
     // Save updated preferences
-    await _storageService.saveUserPreferences(_preferences);
+    await _storageService.saveUserPreferences(_preferences!);
     
-    print('⏰ Updated lastRatesRefresh: ${_preferences.lastRatesRefresh}');
-    print('⏰ Can refresh today: ${_preferences.canRefreshRatesToday()}');
+    print('⏰ Updated lastRatesRefresh: ${_preferences!.lastRatesRefresh}');
+    print('⏰ Can refresh today: ${_preferences!.canRefreshRatesToday()}');
     
     // Notify listeners
     notifyListeners();
@@ -208,11 +243,11 @@ class UserPreferencesProvider with ChangeNotifier {
     try {
       final loadedPrefs = await _storageService.loadUserPreferences();
       
-      print('   BEFORE reload: ${_preferences.toJson()}');
+      print('   BEFORE reload: ${_preferences?.toJson() ?? "No preferences set"}');
       _preferences = loadedPrefs;
-      print('   AFTER reload: ${_preferences.toJson()}');
-      print('   canRefreshRatesToday: ${_preferences.canRefreshRatesToday()}');
-      print('   Selected currencies after reload: ${_preferences.selectedCurrencyCodes.join(", ")}');
+      print('   AFTER reload: ${_preferences!.toJson()}');
+      print('   canRefreshRatesToday: ${_preferences!.canRefreshRatesToday()}');
+      print('   Selected currencies after reload: ${_preferences!.selectedCurrencyCodes.join(", ")}');
       
       notifyListeners();
     } catch (e) {

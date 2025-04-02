@@ -117,12 +117,12 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
         setState(() {
           _isSaving = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cannot remove base currency')),
-        );
-        return;
-      }
-      
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cannot remove base currency')),
+          );
+          return;
+        }
+        
       // Remove currency
       newSelectionList.remove(currencyCode);
       print('Removed currency: $currencyCode, selected: ${newSelectionList.join(", ")}');
@@ -321,7 +321,7 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
         await userPrefs.completeInitialSetup();
       }
 
-      if (mounted) {
+        if (mounted) {
         if (widget.isInitialSetup) {
           // Navigate to home screen and remove all previous routes
           Navigator.of(context).pushAndRemoveUntil(
@@ -363,7 +363,7 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
     final unselectedCurrencies = filteredCurrencies
         .where((c) => !_selectedCurrencies.contains(c.code))
         .toList();
-
+    
     return WillPopScope(
       onWillPop: () async {
         // If in initial setup, require at least one currency to be selected
@@ -450,7 +450,7 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(
+      appBar: AppBar(
           title: Text(widget.isInitialSetup ? 'Select Currencies' : 'Currencies'),
           leading: widget.isInitialSetup ? null : IconButton(
             icon: const Icon(Icons.arrow_back),
@@ -549,12 +549,12 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
                 ),
               ),
           ],
-        ),
-        body: Column(
-          children: [
+      ),
+      body: Column(
+        children: [
             if (widget.isInitialSetup)
-              Padding(
-                padding: const EdgeInsets.all(16.0),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
                 child: Text(
                   'Select the currencies you want to convert between. You can add more later.',
                   style: Theme.of(context).textTheme.bodyLarge,
@@ -575,8 +575,8 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
                   autofocus: false,
                   textInputAction: TextInputAction.search,
                   keyboardType: TextInputType.text,
-                  onChanged: (value) {
-                    setState(() {
+              onChanged: (value) {
+                setState(() {
                       _searchQuery = value.toLowerCase();
                     });
                   },
@@ -603,8 +603,8 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
                             setState(() {
                               _searchController.clear();
                               _searchQuery = '';
-                            });
-                          },
+                });
+              },
                         )
                       : null,
                     border: InputBorder.none,
@@ -640,11 +640,11 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
               ),
             
             // Currency list
-            Expanded(
+          Expanded(
               child: ListView.builder(
                 key: PageStorageKey('currency_list'), // Add key to preserve scroll position
                 itemCount: selectedCurrencies.length + unselectedCurrencies.length,
-                itemBuilder: (context, index) {
+                        itemBuilder: (context, index) {
                   // Create a copy of the selected currencies list to avoid modifying the original during build
                   List<dynamic> displaySelectedCurrencies = List.from(selectedCurrencies);
                   
@@ -700,30 +700,30 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
   }
 
   Widget _buildCurrencyTile(dynamic currency, bool isSelected) {
-    return ListTile(
+                          return ListTile(
       leading: SizedBox(
         width: 36,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: Image.network(
-            currency.flagUrl,
+                              borderRadius: BorderRadius.circular(4),
+                              child: Image.network(
+                                currency.flagUrl,
             width: 36,
-            height: 24,
+                                height: 24,
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => CurrencyFlagPlaceholder(
               size: 36,
               currencyCode: currency.code,
             ),
           ),
-        ),
-      ),
-      title: Text(
-        currency.code,
-        style: TextStyle(
+                              ),
+                            ),
+                            title: Text(
+                              currency.code,
+                              style: TextStyle(
           fontWeight: currency.code == _baseCurrencyCode ? FontWeight.w700 : FontWeight.w600,
-        ),
-      ),
-      subtitle: Text(currency.name),
+                              ),
+                            ),
+                            subtitle: Text(currency.name),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -761,7 +761,7 @@ class _CurrenciesScreenState extends State<CurrenciesScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(4),
               ),
-            ),
+                      ),
           ),
         ],
       ),

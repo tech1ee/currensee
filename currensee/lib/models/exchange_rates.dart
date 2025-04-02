@@ -9,6 +9,33 @@ class ExchangeRates {
     required this.rates,
   });
 
+  // Get the USD rate for a specific currency
+  double getUsdRate(String currencyCode) {
+    // Normalize currency code
+    final code = currencyCode.toUpperCase();
+    
+    // If the currency is USD, rate is 1.0
+    if (code == 'USD') return 1.0;
+    
+    // If our base is USD, return the direct rate
+    if (base == 'USD') {
+      return rates[code] ?? 1.0;
+    }
+    
+    // If we have a different base currency, we need to convert
+    // First get the rate from our base currency to USD
+    final baseToUsdRate = rates['USD'] ?? (1.0 / (rates[base] ?? 1.0));
+    
+    // If the requested currency is our base currency
+    if (code == base) {
+      return baseToUsdRate;
+    }
+    
+    // For any other currency, convert through the base currency
+    final currencyToBaseRate = rates[code] ?? 1.0;
+    return currencyToBaseRate * baseToUsdRate;
+  }
+
   // Method to convert amount from one currency to another
   double convert(double amount, String from, String to) {
     print('\n\n💱💱💱 CONVERSION: $amount $from to $to (base=$base) 💱💱💱');
